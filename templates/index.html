@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}">
 </head>
 <body>
   <main class="shell">
@@ -31,7 +32,7 @@
 
     <nav class="tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="history">История</button></nav>
     <section id="schedule" class="panel"><div id="movieList" class="movie-list"><div class="empty">Загружаем расписание…</div></div></section>
-    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА ПО ДНЯМ</span><h2>Сеансы по датам</h2><p>Одна итоговая точка на каждый день расписания.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>Обновлено</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА ПО ДНЯМ</span><h2>Сеансы по датам</h2><p>Одна итоговая точка на каждый день расписания.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="history-filters"><label><span>Дата с</span><div class="control date-control"><input id="historyFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="historyTo" type="date"></div></label><button class="secondary" id="historyAll" type="button">Весь период</button><small id="historyRangeLabel">Все доступные даты</small></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>Обновлено</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

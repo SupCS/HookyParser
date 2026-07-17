@@ -5,7 +5,7 @@ import re
 import sqlite3
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
@@ -30,7 +30,7 @@ LOCATIONS = {
     "addison": "Addison",
     "baytown": "Baytown",
     "cary": "Cary",
-    "delray-beach": "Delray Beach",
+    "delray": "Delray Beach",
     "fredericksburg": "Fredericksburg",
     "homestead": "Homestead",
     "hutto": "Hutto",
@@ -40,11 +40,26 @@ LOCATIONS = {
 }
 LOCATION_TIMEZONES = {
     "addison": "America/Chicago", "baytown": "America/Chicago",
-    "cary": "America/New_York", "delray-beach": "America/New_York",
+    "cary": "America/New_York", "delray": "America/New_York",
     "fredericksburg": "America/New_York", "homestead": "America/New_York",
     "hutto": "America/Chicago", "nashville": "America/Chicago",
     "southlake": "America/Chicago", "waxahachie": "America/Chicago",
 }
+SITE_IDS = {
+    "addison": 217, "baytown": 216, "cary": 221, "delray": 222,
+    "fredericksburg": 220, "homestead": 223, "hutto": 214,
+    "nashville": 224, "southlake": 206, "waxahachie": 218,
+}
+CIRCUIT_ID = "119"
+FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "13")), 31))
+SHOWINGS_QUERY = """
+query ($date: String, $siteIds: [ID]) {
+  showingsForDate(date: $date, siteIds: $siteIds) {
+    data { id time movie { name urlSlug } }
+    count
+  }
+}
+"""
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -149,14 +164,47 @@ def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
     if location not in LOCATIONS:
         raise ValueError("Неизвестная локация")
     datetime.strptime(show_date, "%Y-%m-%d")
-    source_url = f"{BASE_URL}/{location}/feature-films/?date={show_date}"
-    response = requests.get(
-        source_url,
-        headers={"User-Agent": "HookyHistory/1.0 (+personal analytics)"},
+    page_url = f"{BASE_URL}/{location}/feature-films/"
+    site_id = SITE_IDS[location]
+    response = requests.post(
+        f"{BASE_URL}/graphql",
+        json={"query": SHOWINGS_QUERY, "variables": {"date": show_date, "siteIds": [site_id]}},
+        headers={
+            "User-Agent": "HookyHistory/1.0 (+personal analytics)",
+            "Accept": "application/json",
+            "client-type": "consumer",
+            "circuit-id": CIRCUIT_ID,
+            "site-id": str(site_id),
+            "is-electron-mode": "false",
+            "Referer": page_url,
+        },
         timeout=25,
     )
     response.raise_for_status()
-    return parse_movies(response.text, source_url), source_url
+    payload = response.json()
+    if payload.get("errors"):
+        raise ValueError(payload["errors"][0].get("message", "Hooky GraphQL error"))
+    rows = ((payload.get("data") or {}).get("showingsForDate") or {}).get("data") or []
+    grouped = {}
+    location_tz = ZoneInfo(LOCATION_TIMEZONES[location])
+    for row in rows:
+        movie_data = row.get("movie") or {}
+        slug = movie_data.get("urlSlug")
+        if not slug or not row.get("id") or not row.get("time"):
+            continue
+        movie = grouped.setdefault(slug, {
+            "slug": slug,
+            "title": movie_data.get("name") or slug.replace("-", " ").title(),
+            "url": f"{BASE_URL}/{location}/movie/{slug}",
+            "showings": [],
+        })
+        local_time = datetime.fromisoformat(row["time"].replace("Z", "+00:00")).astimezone(location_tz)
+        movie["showings"].append({
+            "time": local_time.strftime("%I:%M%p").lstrip("0"),
+            "url": f"{BASE_URL}/{location}/checkout/showing/{slug}/{row['id']}",
+            "id": str(row["id"]),
+        })
+    return list(grouped.values()), page_url
 
 
 def save_snapshot(location: str, show_date: str, movies: list[dict], source_url: str) -> int:
@@ -264,8 +312,8 @@ def schedule():
     try:
         snapshot = None if refresh else latest_snapshot(location, show_date)
         if snapshot is None:
-            if show_date != location_today:
-                return jsonify({"error": "Для этой даты ещё нет сохранённого снимка. Живой HTML Hooky отдаёт только активный день."}), 404
+            if show_date < location_today:
+                return jsonify({"error": "Для этой прошедшей даты нет сохранённых данных, а Hooky больше не публикует её расписание."}), 404
             movies, source_url = fetch_schedule(location, show_date)
             save_snapshot(location, show_date, movies, source_url)
             snapshot = latest_snapshot(location, show_date)
@@ -281,15 +329,18 @@ def collect_all_locations(locations=None):
     locations = locations or list(LOCATIONS)
     results = []
     for location in locations:
-        try:
-            if location not in LOCATIONS:
-                raise ValueError(f"Unknown location: {location}")
-            show_date = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
-            movies, source_url = fetch_schedule(location, show_date)
-            run_id = save_snapshot(location, show_date, movies, source_url)
-            results.append({"location": location, "date": show_date, "run_id": run_id})
-        except Exception as error:
-            results.append({"location": location, "date": show_date, "error": str(error)})
+        if location not in LOCATIONS:
+            results.append({"location": location, "error": f"Unknown location: {location}"})
+            continue
+        location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date()
+        for offset in range(FUTURE_DAYS + 1):
+            show_date = (location_today + timedelta(days=offset)).isoformat()
+            try:
+                movies, source_url = fetch_schedule(location, show_date)
+                run_id = save_snapshot(location, show_date, movies, source_url)
+                results.append({"location": location, "date": show_date, "run_id": run_id})
+            except Exception as error:
+                results.append({"location": location, "date": show_date, "error": str(error)})
     return results
 
 
@@ -305,16 +356,53 @@ def collect():
 @app.get("/api/history")
 def history():
     location = request.args.get("location")
-    params, where = [], ""
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    conditions, params = [], []
     if location:
-        where, params = "WHERE location=?", [location]
+        conditions.append("location=?")
+        params.append(location)
+    try:
+        if date_from:
+            datetime.strptime(date_from, "%Y-%m-%d")
+            conditions.append("show_date>=?")
+            params.append(date_from)
+        if date_to:
+            datetime.strptime(date_to, "%Y-%m-%d")
+            conditions.append("show_date<=?")
+            params.append(date_to)
+    except ValueError:
+        return jsonify({"error": "Invalid date range"}), 400
+    if date_from and date_to and date_from > date_to:
+        return jsonify({"error": "date_from must not be after date_to"}), 400
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     with db() as connection:
         rows = connection.execute(
             sql(f"""SELECT id, location, show_date, captured_at, movie_count, showing_count
                 FROM scrape_runs {where} ORDER BY show_date, captured_at"""),
             params,
         ).fetchall()
-    return jsonify([dict(row) for row in rows])
+        run_ids = [row["id"] for row in rows]
+        details = {}
+        if run_ids:
+            placeholders = ",".join("?" for _ in run_ids)
+            showing_rows = connection.execute(
+                sql(f"""SELECT run_id, movie_title, COUNT(*) AS showing_count
+                    FROM showings WHERE run_id IN ({placeholders})
+                    GROUP BY run_id, movie_title ORDER BY run_id, movie_title"""),
+                run_ids,
+            ).fetchall()
+            for showing in showing_rows:
+                details.setdefault(showing["run_id"], []).append({
+                    "title": showing["movie_title"],
+                    "showing_count": showing["showing_count"],
+                })
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["movies"] = details.get(row["id"], [])
+        result.append(item)
+    return jsonify(result)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ def main() -> int:
     results = collect_all_locations()
     print(json.dumps(results, ensure_ascii=False))
     failures = [result for result in results if "error" in result]
-    print(f"Collected {len(results) - len(failures)}/{len(LOCATIONS)} locations")
+    print(f"Collected {len(results) - len(failures)}/{len(results)} daily schedules across {len(LOCATIONS)} locations")
     return 1 if failures else 0
 
 

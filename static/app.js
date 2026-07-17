@@ -67,7 +67,7 @@ async function loadSchedule(refresh = false) {
 
 function renderChart(rows) {
   const chart = $('#chart');
-  const points = rows.slice(-30);
+  const points = rows;
   if (!points.length) {
     chart.innerHTML = '<div class="single-state">Обновите данные, чтобы появился первый снимок.</div>';
     return;
@@ -106,19 +106,37 @@ function renderChart(rows) {
 
 async function loadHistory() {
   try {
-    const response = await fetch(`/api/history?location=${encodeURIComponent($('#location').value)}`);
+    const query = new URLSearchParams({ location: $('#location').value });
+    if ($('#historyFrom').value) query.set('date_from', $('#historyFrom').value);
+    if ($('#historyTo').value) query.set('date_to', $('#historyTo').value);
+    const response = await fetch(`/api/history?${query}`);
     const rows = await response.json();
-    $('#historyRows').innerHTML = rows.slice().reverse().map((row) => `<tr><td>${row.show_date}</td><td>${new Date(row.captured_at).toLocaleString('ru')}</td><td>${row.movie_count}</td><td>${row.showing_count}</td></tr>`).join('') || '<tr><td colspan="4">История пока пуста</td></tr>';
+    if (!response.ok) throw new Error(rows.error || 'Не удалось загрузить историю');
+    $('#historyRows').innerHTML = rows.slice().reverse().map((row) => {
+      const movies = row.movies || [];
+      const movieList = movies.map((movie) => `<li>${escapeHtml(movie.title)}</li>`).join('') || '<li>Нет данных</li>';
+      const showingBreakdown = movies.map((movie) => `<li><span>${escapeHtml(movie.title)}</span><b>${movie.showing_count}</b></li>`).join('') || '<li>Нет данных</li>';
+      return `<tr><td>${row.show_date}</td><td>${new Date(row.captured_at).toLocaleString('ru')}</td>
+        <td><span class="detail-trigger" tabindex="0">${row.movie_count}<span class="data-popover"><strong>Фильмы</strong><ul>${movieList}</ul></span></span></td>
+        <td><span class="detail-trigger" tabindex="0">${row.showing_count}<span class="data-popover breakdown"><strong>Сеансы по фильмам</strong><ul>${showingBreakdown}</ul></span></span></td></tr>`;
+    }).join('') || '<tr><td colspan="4">История пока пуста</td></tr>';
+    if (rows.length) {
+      const first = rows[0].show_date;
+      const last = rows.at(-1).show_date;
+      $('#historyRangeLabel').textContent = `${rows.length} дн. · ${first} — ${last}`;
+    } else {
+      $('#historyRangeLabel').textContent = 'Нет данных в выбранном диапазоне';
+    }
     renderChart(rows);
   } catch (_) {
     $('#chart').innerHTML = '<div class="single-state">Не удалось загрузить историю.</div>';
   }
 }
 
-function isTodaySelected() {
+function isCurrentOrFutureSelected() {
   const today = new Date();
   const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return $('#date').value === localToday;
+  return $('#date').value >= localToday;
 }
 
 function updateCronCountdown() {
@@ -141,7 +159,14 @@ function updateCronCountdown() {
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
 $('#date').addEventListener('change', () => loadSchedule());
-$('#refresh').addEventListener('click', () => loadSchedule(isTodaySelected()));
+$('#refresh').addEventListener('click', () => loadSchedule(isCurrentOrFutureSelected()));
+$('#historyFrom').addEventListener('change', loadHistory);
+$('#historyTo').addEventListener('change', loadHistory);
+$('#historyAll').addEventListener('click', () => {
+  $('#historyFrom').value = '';
+  $('#historyTo').value = '';
+  loadHistory();
+});
 document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach((item) => item.classList.toggle('active', item === button));
   document.querySelectorAll('.panel').forEach((panel) => panel.classList.toggle('hidden', panel.id !== button.dataset.tab));
