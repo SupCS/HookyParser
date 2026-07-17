@@ -156,6 +156,57 @@ function updateCronCountdown() {
   $('#nextRefresh').textContent = `через ${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+function toIsoDate(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function setComparisonRange(type) {
+  const today = new Date();
+  let start = new Date(today), end = new Date(today);
+  if (type === 'week') {
+    const mondayOffset = (today.getDay() + 6) % 7;
+    start.setDate(today.getDate() - mondayOffset);
+    end = new Date(start); end.setDate(start.getDate() + 6);
+  } else if (type === 'last7') {
+    start.setDate(today.getDate() - 6);
+  } else if (type === 'next7') {
+    end.setDate(today.getDate() + 6);
+  }
+  $('#compareFrom').value = toIsoDate(start);
+  $('#compareTo').value = toIsoDate(end);
+  document.querySelectorAll('.preset').forEach((button) => button.classList.toggle('active', button.dataset.range === type));
+}
+
+async function loadComparison() {
+  const dateFrom = $('#compareFrom').value;
+  const dateTo = $('#compareTo').value;
+  if (!dateFrom || !dateTo) return;
+  const list = $('#comparisonList');
+  list.innerHTML = '<div class="empty">Считаем фильмы и сеансы…</div>';
+  try {
+    const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+    const response = await fetch(`/api/compare?${query}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Не удалось построить сравнение');
+    const locations = data.locations || [];
+    const totalShowings = locations.reduce((sum, location) => sum + location.showing_count, 0);
+    const uniqueTitles = new Set(locations.flatMap((location) => location.movies.map((movie) => movie.title)));
+    const activeLocations = locations.filter((location) => location.days_available > 0).length;
+    $('#compareSummary').innerHTML = `<article><span>Всего сеансов</span><strong>${totalShowings}</strong></article><article><span>Уникальных фильмов</span><strong>${uniqueTitles.size}</strong></article><article><span>Локаций с данными</span><strong>${activeLocations}/${locations.length}</strong></article>`;
+    const maxShowings = Math.max(1, ...locations.map((location) => location.showing_count));
+    list.innerHTML = locations.map((location) => {
+      const movies = location.movies.map((movie) => `<li><span>${escapeHtml(movie.title)}</span><b>${movie.showing_count}</b>${data.single_day && movie.times.length ? `<div class="comparison-times">${movie.times.map((time) => `<em>${escapeHtml(time)}</em>`).join('')}</div>` : ''}</li>`).join('') || '<li><span>Нет расписания за этот период</span></li>';
+      return `<article class="location-card ${location.showing_count ? '' : 'no-data'}"><div class="location-card-header"><div class="location-title"><h3>${escapeHtml(location.name)}</h3><strong>${location.showing_count}<small>сеансов</small></strong></div><div class="location-meta"><span>${location.unique_movie_count} фильм.</span><span>${location.days_available}/${data.requested_days} дн. с данными</span></div><div class="comparison-bar"><i style="width:${location.showing_count / maxShowings * 100}%"></i></div></div><details><summary>Фильмы за период · ${location.unique_movie_count}</summary><ul class="comparison-movies">${movies}</ul></details></article>`;
+    }).join('');
+  } catch (error) {
+    list.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    $('#compareSummary').innerHTML = '';
+  }
+}
+
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
 $('#date').addEventListener('change', () => loadSchedule());
@@ -167,13 +218,30 @@ $('#historyAll').addEventListener('click', () => {
   $('#historyTo').value = '';
   loadHistory();
 });
+document.querySelectorAll('.preset').forEach((button) => button.addEventListener('click', () => {
+  setComparisonRange(button.dataset.range);
+  loadComparison();
+}));
+$('#compareApply').addEventListener('click', () => {
+  document.querySelectorAll('.preset').forEach((button) => button.classList.remove('active'));
+  loadComparison();
+});
 document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach((item) => item.classList.toggle('active', item === button));
   document.querySelectorAll('.panel').forEach((panel) => panel.classList.toggle('hidden', panel.id !== button.dataset.tab));
+  document.body.classList.toggle('compare-mode', button.dataset.tab === 'comparison');
+  if (button.dataset.tab === 'comparison') {
+    $('#heroLocation').textContent = 'All Locations';
+    document.title = 'Hooky Parser — сравнение локаций';
+    loadComparison();
+  } else {
+    updateLocationHeading();
+  }
   if (button.dataset.tab === 'history') loadHistory();
 }));
 
 updateLocationHeading();
+setComparisonRange('week');
 updateCronCountdown();
 setInterval(updateCronCountdown, 1000);
 loadSchedule();

@@ -405,6 +405,69 @@ def history():
     return jsonify(result)
 
 
+@app.get("/api/compare")
+def compare_locations():
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    if not date_from or not date_to:
+        return jsonify({"error": "date_from and date_to are required"}), 400
+    try:
+        start = datetime.strptime(date_from, "%Y-%m-%d").date()
+        end = datetime.strptime(date_to, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "Invalid date range"}), 400
+    if start > end:
+        return jsonify({"error": "date_from must not be after date_to"}), 400
+
+    with db() as connection:
+        rows = connection.execute(
+            sql("""SELECT r.location, r.show_date, s.movie_title, s.show_time
+                   FROM scrape_runs r
+                   LEFT JOIN showings s ON s.run_id = r.id
+                   WHERE r.show_date>=? AND r.show_date<=?
+                   ORDER BY r.location, r.show_date, s.movie_title, s.id"""),
+            (date_from, date_to),
+        ).fetchall()
+
+    summaries = {
+        slug: {"location": slug, "name": name, "days": set(), "movies": {}}
+        for slug, name in LOCATIONS.items()
+    }
+    for row in rows:
+        if row["location"] not in summaries:
+            continue
+        summary = summaries[row["location"]]
+        summary["days"].add(row["show_date"])
+        if not row["movie_title"]:
+            continue
+        movie = summary["movies"].setdefault(
+            row["movie_title"], {"title": row["movie_title"], "showing_count": 0, "times": []}
+        )
+        movie["showing_count"] += 1
+        if start == end:
+            movie["times"].append(row["show_time"])
+
+    result = []
+    for summary in summaries.values():
+        movies = sorted(summary["movies"].values(), key=lambda item: (-item["showing_count"], item["title"]))
+        result.append({
+            "location": summary["location"],
+            "name": summary["name"],
+            "days_available": len(summary["days"]),
+            "unique_movie_count": len(movies),
+            "showing_count": sum(movie["showing_count"] for movie in movies),
+            "movies": movies,
+        })
+    result.sort(key=lambda item: (-item["showing_count"], item["name"]))
+    return jsonify({
+        "date_from": date_from,
+        "date_to": date_to,
+        "requested_days": (end - start).days + 1,
+        "single_day": start == end,
+        "locations": result,
+    })
+
+
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=True)

@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='history.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}">
 </head>
 <body>
   <main class="shell">
@@ -30,9 +31,10 @@
       <article class="status-card"><span>Последний снимок</span><strong id="captured">—</strong><small id="status">Загрузка…</small></article>
     </section>
 
-    <nav class="tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="history">История</button></nav>
+    <nav class="tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="history">История</button><button data-tab="comparison">Сравнение локаций</button></nav>
     <section id="schedule" class="panel"><div id="movieList" class="movie-list"><div class="empty">Загружаем расписание…</div></div></section>
     <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА ПО ДНЯМ</span><h2>Сеансы по датам</h2><p>Одна итоговая точка на каждый день расписания.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="history-filters"><label><span>Дата с</span><div class="control date-control"><input id="historyFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="historyTo" type="date"></div></label><button class="secondary" id="historyAll" type="button">Весь период</button><small id="historyRangeLabel">Все доступные даты</small></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>Обновлено</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+    <section id="comparison" class="panel hidden"><div class="section-head"><div><span class="eyebrow">СРАВНЕНИЕ</span><h2>Локации за период</h2><p>Уникальные фильмы и суммарное количество сеансов.</p></div><div class="legend"><i></i> Чем больше, тем активнее</div></div><div class="compare-filters"><div class="compare-presets"><button class="preset active" data-range="week">Эта неделя</button><button class="preset" data-range="last7">Последние 7 дней</button><button class="preset" data-range="next7">Следующие 7 дней</button></div><label><span>Дата с</span><div class="control date-control"><input id="compareFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="compareTo" type="date"></div></label><button class="primary compare-submit" id="compareApply" type="button">Сравнить</button></div><div class="compare-summary" id="compareSummary"></div><div class="location-comparison" id="comparisonList"><div class="empty">Выберите период для сравнения.</div></div></section>
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
