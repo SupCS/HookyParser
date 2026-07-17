@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script data-test-id="js-enabled-script">
+    function ios() {
+      let userAgent = window.navigator.userAgent.toLowerCase()
+      let safari = /safari/.test(userAgent)
+      let ios = /iphone|ipod|ipad/.test(userAgent) || (/macintosh/.test(userAgent) && window.navigator.maxTouchPoints > 0)
+
+      return ios && !safari
+    }
+
+    const loadingMessage = [
+      'Popping the popcorn',
+      'Starting the projectors',
+      'Contacting Hollywood',
+      'Negotiating Distribution Deals',
+      'Splicing the Film',
+      'Sweeping the Auditorium'
+    ]
+    function showDelayLoadMessage(attempt = 1) {
+      const loadDelayMessageElement = document.getElementById('indy-load-delay-message')
+
+      if (!loadDelayMessageElement) return
+
+      if (attempt === 1) {
+        loadDelayMessageElement.style.display = "block"
+      } else {
+        loadDelayMessageElement.children[0].textContent = loadingMessage[(attempt - 2) % loadingMessage.length]
+      }
+
+      setTimeout(() => {
+        showDelayLoadMessage(attempt + 1)
+      }, 5000)
+    }
+    setTimeout(() => {
+      showDelayLoadMessage()
+    }, 7500)
+  </script>
+  <script data-test-id="splash-image-script">
+    const splashImageEl = document.getElementById('splash-image')
+    const qAppEl = document.getElementById('q-app-splash-screen')
+
+    if (splashImageEl && qAppEl && localStorage.splashImageUrl && localStorage.splashBackgroundColor) {
+      splashImageEl.src = localStorage.splashImageUrl
+
+      splashImageEl.onload = function () {
+        if (splashImageEl.naturalWidth > 0 && splashImageEl.naturalHeight > 0) {
+          rendered()
+          return
+        }
+        const interval = setInterval(() => {
+          if (splashImageEl.naturalWidth > 0 && splashImageEl.naturalHeight > 0) {
+            clearInterval(interval);
+            rendered();
+          }
+        }, 5);
+      }
+      function rendered() {
+        qAppEl.style.backgroundColor = localStorage.splashBackgroundColor
+      }
+    }
+  </script>
+  <script type="application/ld+json" data-test-id="schema-org-data">
+    {"@context":"https://schema.org","@type":"MovieTheater","name":"Hooky Entertainment | Hooky Entertainment Hutto","brand":"Hooky Entertainment","description":"Ditch the everyday and see a movie, bowl a perfect game, grab a bite, have a drink, play games, and so much more — Hooky has something for all genres of fun.","address":{"@type":"PostalAddress","streetAddress":"150 Alliance Blvd. Suite 100","addressLocality":"Hutto","postalCode":"78634","addressRegion":"TX","addressCountry":"US"},"telephone":"+1(512) 954-9295","email":"hutto.help@hookyentertainment.com","geo":{"@type":"GeoCoordinates","latitude":30.5409928,"longitude":-97.5671166},"screenCount":8,"logo":"https://indy-systems.imgix.net/rlnrkkzr0sh9bh9xcixl765edb33?w=400&fm=png&auto=format","url":"https://hookyentertainment.com/hutto/"}
+  </script>
+  <title>Hooky Entertainment | Hooky Entertainment Hutto | Feature Films</title>
+  <link rel="canonical" href="https://hookyentertainment.com/hutto/feature-films/">
+  <meta charset=utf-8>
+  <meta name="description" content="Our first-class viewing experience offers laser projectors, Dolby sound, recliner seats, and in-theater service offering full food, beverage, and cocktail menus.">
+  <meta property="og:description" content="Our first-class viewing experience offers laser projectors, Dolby sound, recliner seats, and in-theater service offering full food, beverage, and cocktail menus.">
+  <meta name="twitter:description" content="Our first-class viewing experience offers laser projectors, Dolby sound, recliner seats, and in-theater service offering full food, beverage, and cocktail menus.">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="msapplication-tap-highlight" content="no">
+  <meta name="viewport"
+    content="user-scalable=no,initial-scale=1,maximum-scale=1,minimum-scale=1,width=device-width,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="description" content="Our first-class viewing experience offers laser projectors, Dolby sound, recliner seats, and in-theater service offering full food, beverage, and cocktail menus."><meta name="twitter:title" content="Feature Films"><meta name="twitter:site" content="@"><meta name="twitter:url" content="https://hookyentertainment.com/hutto/feature-films"><meta name="twitter:card" content="summary"><meta name="twitter:description" content="Our first-class viewing experience offers laser projectors, Dolby sound, recliner seats, and in-theater service offering full food, beverage, and cocktail menus."><meta property="og:title" content="Feature Films"><meta property="og:site_name" content="Hooky Entertainment Hutto"><meta property="og:type" content="website"><meta property="og:url" content="https://hookyentertainment.com/hutto/feature-films"><meta property="og:description" content="Our first-class viewing experience offers laser projectors, Dolby sound, recliner seats, and in-theater service offering full food, beverage, and cocktail menus.">
+  <link rel=icon type=image/png sizes=128x128
+    href="https://indy-systems.imgix.net/pcyngi1u4xlv0wppq8v2u0cjjl4t?fm=png&w=128&h=128&fit=fill&fill=solid&auto=format">
+  <link rel=icon type=image/png sizes=96x96
+    href="https://indy-systems.imgix.net/pcyngi1u4xlv0wppq8v2u0cjjl4t?fm=png&w=96&h=96&fit=fill&fill=solid&auto=format">
+  <link rel=icon type=image/png sizes=32x32
+    href="https://indy-systems.imgix.net/pcyngi1u4xlv0wppq8v2u0cjjl4t?fm=png&w=32&h=32&fit=fill&fill=solid&auto=format">
+  <link rel=icon type=image/png sizes=16x16
+    href="https://indy-systems.imgix.net/pcyngi1u4xlv0wppq8v2u0cjjl4t?fm=png&w=16&h=16&fit=fill&fill=solid&auto=format">
+  <link href="/fontawesome/css/fontawesome.min.css" rel="stylesheet">
+  <link href="/fontawesome/css/light.min.css" rel="stylesheet">
+  <link href="/fontawesome/css/solid.min.css" rel="stylesheet">
+  <link href="/fontawesome/css/brands.min.css" rel="stylesheet">
+  <link rel=icon type=image/ico href="https://indy-systems.imgix.net/mpsp9zf7gmn9tbacez79aap9lall?fm=png&w=32&h=32&fit=fill&fill=solid&auto=format">
+  <link rel="shortcut icon" href="https://indy-systems.imgix.net/pcyngi1u4xlv0wppq8v2u0cjjl4t?fm=png&w=128&h=128&fit=fill&fill=solid&auto=format">
+  <link rel=apple-touch-icon
+    href="https://indy-systems.imgix.net/z9afk00ahku6zyr4o9gjs8aojqyq?fm=png&w=128&h=128&fit=fill&fill=solid&pad=9&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=828&h=1792&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=1125&h=2436&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=1242&h=2688&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=750&h=1334&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=1242&h=2208&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=640&h=1136&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=1536&h=2048&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 834px) and (device-height: 1112px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=1668&h=2224&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=1668&h=2388&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=apple-touch-startup-image
+    media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)"
+    href="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?fm=png&w=2048&h=2732&fit=fillmax&fill=solid&pad=60&fill-color=0a1737&bg=0a1737&auto=format">
+  <link rel=stylesheet href=https://use.typekit.net/hwu0dkh.css>
+  <style>
+    @font-face {
+      font-family: "bebas-neue";
+      src: url("/fonts/BebasNeue-Regular.ttf") format("opentype");
+      font-display: auto;
+      font-style: normal;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+
+    body {
+      font-family: brandon-grotesque, sans-serif;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    .text-h1,
+    .text-h2,
+    .text-h3,
+    .text-h4,
+    .text-h5,
+    .text-h6 {
+      font-family: bebas-neue, sans-serif;
+      font-style: normal;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+
+    .q-header .menu .q-btn {
+      font-family: bebas-neue, sans-serif;
+      font-size: calc(1em + 0.5vmin);
+      font-style: normal;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+  </style>
+  <link href=/css/ rel=stylesheet>
+  <link href=/css/app.bd5d9d36.css rel=stylesheet>
+  <link href="https://hookyassets-224d0.kxcdn.com/css/base-v5.css?v=20260602.1" rel="stylesheet" />
+<script src="https://hookyassets-224d0.kxcdn.com/js/base-v5.min.js?v=20260505.1" defer></script>
+
+<!--
+<link data-hooky-uncache data-href="https://hookyassets-224d0.kxcdn.com/css/base-v5.css" rel="stylesheet" />
+<script data-hooky-uncache data-src="https://hookyassets-224d0.kxcdn.com/js/base-v5.min.js" defer></script>
+
+<script>
+ (() => {
+ const elements = document.head.querySelectorAll('[data-hooky-uncache]');
+ if (elements) {
+ const ver = Date.now();
+ elements.forEach((el)=>{
+ if (el.dataset.href) {
+ el.href = el.dataset.href + '?v=' + ver;
+ } else if (el.dataset.src) {
+ el.src = el.dataset.src + '?v=' + ver;
+ }
+ });
+ }
+ })();
+</script>
+-->
+
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-KMRBQMR3');</script>
+<!-- End Google Tag Manager -->
+
+<script src="https://www.movienewsletters.net/referral/live/hooky.js"></script>
+</head>
+
+<body style="background-color: #ffffff;">
+  <!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KMRBQMR3"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+  <div id="q-app">
+    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; z-index: -1000;">
+      <h1>Feature Films</h1><h2>Banner</h2><p><body><div class="hky-page-content"><!--! BANNER ==========================================--><div id="showtimes--banner" class="hky-scheme--navy hky-relative"><div class="hky-banner hky-banner--showtimes hky-container hky-relative"><div class="hky-absolute-full"><picture><source media="(min-width: 750px)" srcset="https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=3600 3600w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=3200 3200w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=2800 2800w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=2400 2400w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=2000 2000w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=1600 1600w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=1200 1200w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero.jpg?format=webp&width=1000 1000w"/><img srcset="https://hookyassets-224d0.kxcdn.com/img/films-hero-mobile.jpg?format=webp&crop=smart&width=1600&height=1600 1600w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero-mobile.jpg?format=webp&crop=smart&width=1200&height=1200 1200w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero-mobile.jpg?format=webp&crop=smart&width=800&height=800 800w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero-mobile.jpg?format=webp&crop=smart&width=400&height=400 400w,
+ https://hookyassets-224d0.kxcdn.com/img/films-hero-mobile.jpg?format=webp&crop=smart&width=200&height=200 200w" sizes="100vw, (min-width: 1920px) 1920px" fetchpriority="high" loading="eager" alt="" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3R5bGU9ImZpbGw6IHJnYmEoMCwwLDAsMC4xNSk7IHRyYW5zZm9ybTogc2NhbGUoMC43NSkiPgogICAgICAgIDxwYXRoIGQ9Ik04LjUgMTMuNWwyLjUgMyAzLjUtNC41IDQuNSA2SDVtMTYgMVY1YTIgMiAwIDAgMC0yLTJINWMtMS4xIDAtMiAuOS0yIDJ2MTRjMCAxLjEuOSAyIDIgMmgxNGMxLjEgMCAyLS45IDItMnoiPjwvcGF0aD4KICAgICAgPC9zdmc+" class="hky-object-cover"/></picture></div><!--==========================================--><div class="hky-banner__text hky-relative z-2"><div class="hky-banner__text-content"><h1 class="hky-hd--lg">
+ Feature Films 
+ </h1></div></div><!--==========================================--><div class="hky-overlay hky-overlay--showtimes-gradient z-1"></div></div></div> <!-- hky-banner --></div> <!-- hky-page-content --><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"99f3272fb3af4f62a1e6f6a4d7325d41","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body></p><h2>Showtimes</h2><p>Showtimes
+<a href="https://hookyentertainment.com/hutto/movie/the-odyssey">The Odyssey</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3246876"> 9:00AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3524085"> 9:30AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3512928">12:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3246877"> 1:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3524086"> 1:30PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3512924"> 3:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3246878"> 5:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3524087"> 5:30PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3512923"> 6:30PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3512927"> 7:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3246879"> 9:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-odyssey/3524088"> 9:30PM</a>
+<a href="https://hookyentertainment.com/hutto/movie/minions-monsters">Minions &amp; Monsters</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/minions-monsters/3524089"> 9:05AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/minions-monsters/3524090">12:30PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/minions-monsters/3524094"> 2:15PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/minions-monsters/3524092"> 7:30PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/minions-monsters/3525748">10:15PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/minions-monsters/3524093">10:45PM</a>
+<a href="https://hookyentertainment.com/hutto/movie/toy-story-5">Toy Story 5</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/toy-story-5/3524105"> 9:15AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/toy-story-5/3524108">11:30AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/toy-story-5/3524109"> 4:00PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/toy-story-5/3524110"> 6:45PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/toy-story-5/3524111"> 9:45PM</a>
+<a href="https://hookyentertainment.com/hutto/movie/young-washington">Young Washington</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/young-washington/3524100"> 9:35AM</a>
+<a href="https://hookyentertainment.com/hutto/movie/the-invite">The Invite</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/the-invite/3545123"> 9:45AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-invite/3545120">12:45PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-invite/3545121"> 3:35PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-invite/3545273"> 4:45PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/the-invite/3545122">10:30PM</a>
+<a href="https://hookyentertainment.com/hutto/movie/the-wild-robot">The Wild Robot</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/the-wild-robot/3158965">10:00AM</a>
+<a href="https://hookyentertainment.com/hutto/movie/moana">Moana</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/moana/3524095">10:15AM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/moana/3524096"> 1:15PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/moana/3524097"> 4:15PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/moana/3524098"> 7:15PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/moana/3524099">10:00PM</a>
+<a href="https://hookyentertainment.com/hutto/movie/evil-dead-burn">Evil Dead Burn</a> | <a href="https://hookyentertainment.com/hutto/checkout/showing/evil-dead-burn/3524101">12:35PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/evil-dead-burn/3524102"> 3:30PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/evil-dead-burn/3524103"> 6:15PM</a>, <a href="https://hookyentertainment.com/hutto/checkout/showing/evil-dead-burn/3524104"> 9:15PM</a></p><h2>Coming Soon</h2><p>Coming Soon
+<a href="https://hookyentertainment.com/hutto/movie/goat">Goat</a> - <a href="https://hookyentertainment.com/hutto/movie/david">David</a> - <a href="https://hookyentertainment.com/hutto/movie/despicable-me-4">Despicable Me 4</a> - <a href="https://hookyentertainment.com/hutto/movie/minions-the-rise-of-gru">Minions: The Rise of Gru</a> - <a href="https://hookyentertainment.com/hutto/movie/spider-man-brand-new-day">Spider-Man: Brand New Day</a> - <a href="https://hookyentertainment.com/hutto/movie/super-troopers-3">Super Troopers 3</a> - <a href="https://hookyentertainment.com/hutto/movie/the-end-of-oak-street">The End of Oak Street</a> - <a href="https://hookyentertainment.com/hutto/movie/one-night-only">One Night Only</a> - <a href="https://hookyentertainment.com/hutto/movie/paw-patrol-the-dino-movie">Paw Patrol: The Dino Movie</a> - <a href="https://hookyentertainment.com/hutto/movie/insidious-out-of-the-further">Insidious: Out Of The Further</a></p><h2>Hooky Marketing Signup</h2><p>Hooky Marketing Signup</p><h2>Hooky Footer</h2><p><body><div class="hky-footer hky-scheme--navy"><div class="hky-container"><div class="hky-footer__main"><!--! BRAND --><div class="hky-footer__brand"><div class="hky-footer__logo"><a href="/"><img src="https://hookyassets-224d0.kxcdn.com/img/hooky-white-2.svg" loading="lazy" alt="Hooky"/></a></div><div class="hky-footer__social hky-footer__social--desktop"><a href="https://facebook.com/hookyentertainment" target="_blank"><i class="fab fa-facebook-f"></i></a><a href="https://instagram.com/hookyentertainment" target="_blank"><i class="fab fa-instagram"></i></a><a href="https://tiktok.com/@hookyentertainment" target="_blank"><i class="fab fa-tiktok"></i></a></div></div><!--! NAV --><nav class="hky-footer__nav"><ul class="hky-footer__main-menu hky-unstyled-list"><li class="hky-footer__item-movies"><a href="/feature-films">
+ Movies
+ </a></li><li class="hky-footer__item-showtimes"><a href="/feature-films">
+ Showtimes
+ </a></li><li class="hky-footer__item-coming-soon"><a href="/coming-soon">
+ Coming Soon
+ </a></li><li class="hky-footer__item-bowling"><a href="/bowling">
+ Bowling
+ </a></li><li class="hky-footer__item-duckpin-bowling"><a href="/duckpin-bowling">
+ Duckpin Bowling
+ </a></li><li class="hky-footer__item-games"><a href="/games">
+ Games
+ </a></li><li class="hky-footer__item-eat-drink"><a href="/eat-and-drink">
+ Eat &amp; Drink
+ </a></li><li class="hky-footer__item-parties-events"><a href="/private-events">
+ Parties &amp; Events
+ </a></li><li class="hky-footer__item-summer-pass"><a href="/all-in-summer-pass">
+ All-In Summer Pass
+ </a></li></ul><ul class="hky-footer__secondary-menu hky-unstyled-list"><li class="hky-footer__item-location"><a href="/location">
+ Hours &amp; Info
+ </a></li><li class="hky-footer__item-locations"><a href="/locations">
+ Locations
+ </a></li><li class="hky-footer__item-offers"><a href="/offers-and-promotions">
+ Offers &amp; Promotions
+ </a></li><li class="hky-footer__item-game-day"><a href="/watch-sports">
+ Game Day
+ </a></li><li class="hky-footer__item-gift-cards"><a href="/gift-card">
+ Gift Cards
+ </a></li></ul><ul class="hky-footer__secondary-menu hky-unstyled-list"><li class="hky-footer__item-about"><a href="/about">
+ About Hooky
+ </a></li><li class="hky-footer__item-account"><a href="/account">
+ Account
+ </a></li><li class="hky-footer__item-faq"><a href="/faq">
+ FAQ
+ </a></li><li class="hky-footer__item-careers"><a href="/careers">
+ Careers
+ </a></li><li class="hky-footer__item-news"><a href="/press">
+ News
+ </a></li></ul></nav></div> <!-- hky-footer__main --><!--! MOBILE SOCIAL --><div class="hky-footer__social hky-footer__social--mobile"><a href="https://facebook.com/hookyentertainment" target="_blank"><i class="fab fa-facebook-f"></i></a><a href="https://instagram.com/hookyentertainment" target="_blank"><i class="fab fa-instagram"></i></a><a href="https://tiktok.com/@hookyentertainment" target="_blank"><i class="fab fa-tiktok"></i></a></div><!--! LEGAL --><div class="hky-footer__legal"><span>©2026 Hooky Entertainment, Inc. All rights reserved.</span><a href="/privacy-policy" class="hky-footer__item-privacy-policy">Privacy Policy</a><a href="/code-of-conduct" class="hky-footer__item-conduct">Code of Conduct</a><a href="/unaccompanied-minor-policy" class="hky-footer__item-minor-policy">Unaccompanied Minor Policy</a><a href="/sweepstakes-rules" class="hky-footer__item-sweepstakes">Sweepstakes Rules</a></div></div></div></body></p>
+    </div>
+    <div
+      class="q-app-splash-screen"
+      style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: #0a1737;">
+      <div style="height: 100%; width: 100%;">
+        <div style="text-align: center;">
+          <div
+            style="width: 90%; max-width: 600px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+            <img alt="Hooky Entertainment – Movies, Bowling, Games, Food and Drinks, Parties and Events"
+              src="https://indy-systems.imgix.net/bvu4ik7sb83emqgufkqm45agcx6c?w=1200&auto=format"
+              style="width: 100%" id="splash-image">
+          </div>
+        </div>
+        <div id="indy-load-delay-message"
+          style="position: absolute; bottom: 30px; left: 0; right: 0; text-align: center; display: none;">
+          <span
+            style="padding: 10px 20px; background-color: #00000066; color: white; font-size: large; font-weight: bold; border-radius: 10px;">
+            Loading...
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src=/js/vendor.16add904.js></script>
+  <script src=/js/app.c4c35c03.js></script>
+</body>
+</html>

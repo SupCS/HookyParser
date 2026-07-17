@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hooky Parser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div><span class="eyebrow">HOOKY ENTERTAINMENT · SHOWTIMES</span><h1>Hooky Parser<br><em>for <span id="heroLocation">Hutto</span></em></h1></div>
+      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Railway Cron</b><small>Все локации каждые 12 часов</small></span></div><button class="primary" id="refresh">Обновить локацию <span>↗</span></button></div>
+    </header>
+
+    <section class="toolbar" aria-label="Фильтры">
+      <label><span>Локация</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>
+      <label><span>Дата сеансов</span><div class="control date-control"><input id="date" type="date" value="{{ today }}"></div></label>
+      <label class="search"><span>Поиск фильма</span><div class="control search-control"><input id="search" type="search" placeholder="Например, Superman"></div></label>
+    </section>
+
+    <section class="metrics" aria-live="polite">
+      <article><span>Фильмов</span><strong id="movieCount">—</strong><small>в выбранную дату</small></article>
+      <article><span>Сеансов</span><strong id="showingCount">—</strong><small>всего в расписании</small></article>
+      <article><span>В среднем</span><strong id="average">—</strong><small>сеансов на фильм</small></article>
+      <article class="status-card"><span>Последний снимок</span><strong id="captured">—</strong><small id="status">Загрузка…</small></article>
+    </section>
+
+    <nav class="tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="history">История</button></nav>
+    <section id="schedule" class="panel"><div id="movieList" class="movie-list"><div class="empty">Загружаем расписание…</div></div></section>
+    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА</span><h2>История снимков</h2><p>Количество сеансов в последних 30 сохранённых снимках.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата сеансов</th><th>Снято</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+const $ = (selector) => document.querySelector(selector);
+const state = { movies: [], loading: false };
+
+function escapeHtml(value) {
+  const node = document.createElement('span');
+  node.textContent = value ?? '';
+  return node.innerHTML;
+}
+
+function selectedLocationName() {
+  return $('#location').selectedOptions[0]?.textContent || 'Hutto';
+}
+
+function updateLocationHeading() {
+  $('#heroLocation').textContent = selectedLocationName();
+  document.title = `Hooky Parser for ${selectedLocationName()}`;
+}
+
+function renderMovies() {
+  const term = $('#search').value.trim().toLowerCase();
+  const movies = state.movies.filter((movie) => movie.title.toLowerCase().includes(term));
+  $('#movieList').innerHTML = movies.length ? movies.map((movie, index) => `
+    <details class="movie" ${index === 0 ? 'open' : ''}>
+      <summary>
+        <span class="rank">${String(index + 1).padStart(2, '0')}</span>
+        <div><h3>${escapeHtml(movie.title)}</h3><p>${escapeHtml(movie.showings[0]?.time)} — ${escapeHtml(movie.showings.at(-1)?.time)}</p></div>
+        <span class="count">${movie.showings.length} сеанс.</span>
+      </summary>
+      <div class="times">${movie.showings.map((show) => `<a href="${show.url}" target="_blank" rel="noreferrer">${escapeHtml(show.time)}</a>`).join('')}</div>
+    </details>`).join('') : '<div class="empty">Фильмы по этому запросу не найдены.</div>';
+}
+
+async function loadSchedule(refresh = false) {
+  if (state.loading) return;
+  state.loading = true;
+  const button = $('#refresh');
+  button.disabled = true;
+  $('#status').textContent = 'Загрузка…';
+  const query = new URLSearchParams({ location: $('#location').value, date: $('#date').value });
+  if (refresh) query.set('refresh', '1');
+
+  try {
+    const response = await fetch(`/api/schedule?${query}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Ошибка загрузки');
+    state.movies = data.movies || [];
+    const showings = state.movies.reduce((sum, movie) => sum + movie.showings.length, 0);
+    $('#movieCount').textContent = state.movies.length;
+    $('#showingCount').textContent = showings;
+    $('#average').textContent = state.movies.length ? (showings / state.movies.length).toFixed(1) : '0';
+    $('#captured').textContent = data.run ? new Date(data.run.captured_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : '—';
+    $('#status').textContent = refresh ? 'Новый снимок сохранён' : 'Сохранённые данные';
+    renderMovies();
+    await loadHistory();
+  } catch (error) {
+    state.movies = [];
+    $('#movieList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    $('#status').textContent = 'Ошибка загрузки';
+  } finally {
+    state.loading = false;
+    button.disabled = false;
+  }
+}
+
+function renderChart(rows) {
+  const chart = $('#chart');
+  const points = rows.slice(-30);
+  if (!points.length) {
+    chart.innerHTML = '<div class="single-state">Обновите данные, чтобы появился первый снимок.</div>';
+    return;
+  }
+  if (points.length === 1) {
+    chart.innerHTML = `<div class="single-state"><div><b>${points[0].showing_count}</b>сеансов в первом снимке<br>Линия динамики появится после следующего обновления.</div></div>`;
+    return;
+  }
+
+  const width = 1000, height = 230, left = 42, right = 20, top = 20, bottom = 35;
+  const values = points.map((row) => row.showing_count);
+  const max = Math.max(...values, 1), min = Math.min(...values, 0);
+  const range = Math.max(max - min, 4);
+  const x = (index) => left + index * ((width - left - right) / (points.length - 1));
+  const y = (value) => top + (max - value) * ((height - top - bottom) / range);
+  const coordinates = points.map((row, index) => [x(index), y(row.showing_count)]);
+  const line = coordinates.map(([px, py]) => `${px},${py}`).join(' ');
+  const area = `${left},${height - bottom} ${line} ${coordinates.at(-1)[0]},${height - bottom}`;
+  const grids = [0, .5, 1].map((ratio) => {
+    const gy = top + ratio * (height - top - bottom);
+    const value = Math.round(max - ratio * range);
+    return `<line class="grid-line" x1="${left}" y1="${gy}" x2="${width - right}" y2="${gy}"/><text class="chart-label" x="0" y="${gy + 4}">${value}</text>`;
+  }).join('');
+  const dots = coordinates.map(([px, py], index) => `<g><title>${points[index].show_date} · ${points[index].showing_count} сеансов</title><circle class="chart-dot" cx="${px}" cy="${py}" r="5"/></g>`).join('');
+  const labels = points.map((row, index) => {
+    if (index !== 0 && index !== points.length - 1 && index % Math.ceil(points.length / 5)) return '';
+    const label = new Date(row.captured_at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
+    return `<text class="chart-label" text-anchor="middle" x="${x(index)}" y="${height - 8}">${label}</text>`;
+  }).join('');
+  chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Динамика количества сеансов">
+    <defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0009dc" stop-opacity=".16"/><stop offset="1" stop-color="#0009dc" stop-opacity="0"/></linearGradient></defs>
+    ${grids}<polygon class="chart-area" points="${area}"/><polyline class="chart-line" points="${line}"/>${dots}${labels}
+  </svg>`;
+}
+
+async function loadHistory() {
+  try {
+    const response = await fetch(`/api/history?location=${encodeURIComponent($('#location').value)}`);
+    const rows = await response.json();
+    $('#historyRows').innerHTML = rows.slice().reverse().map((row) => `<tr><td>${row.show_date}</td><td>${new Date(row.captured_at).toLocaleString('ru')}</td><td>${row.movie_count}</td><td>${row.showing_count}</td></tr>`).join('') || '<tr><td colspan="4">История пока пуста</td></tr>';
+    renderChart(rows);
+  } catch (_) {
+    $('#chart').innerHTML = '<div class="single-state">Не удалось загрузить историю.</div>';
+  }
+}
+
+function isTodaySelected() {
+  const today = new Date();
+  const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return $('#date').value === localToday;
+}
+
+$('#search').addEventListener('input', renderMovies);
+$('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
+$('#date').addEventListener('change', () => loadSchedule());
+$('#refresh').addEventListener('click', () => loadSchedule(isTodaySelected()));
+document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach((item) => item.classList.toggle('active', item === button));
+  document.querySelectorAll('.panel').forEach((panel) => panel.classList.toggle('hidden', panel.id !== button.dataset.tab));
+  if (button.dataset.tab === 'history') loadHistory();
+}));
+
+updateLocationHeading();
+loadSchedule();
