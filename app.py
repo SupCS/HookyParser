@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import time
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
@@ -46,6 +47,7 @@ LOCATION_TIMEZONES = {
 }
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
 
 def db():
@@ -168,16 +170,19 @@ def save_snapshot(location: str, show_date: str, movies: list[dict], source_url:
                 (location, show_date, captured_at, source_url, len(movies), showing_count),
             )
             run_id = cursor.lastrowid
-        connection.executemany(
-            sql("""INSERT INTO showings
-               (run_id, movie_slug, movie_title, show_time, checkout_url)
-               VALUES (?, ?, ?, ?, ?)"""),
-            [
-                (run_id, movie["slug"], movie["title"], showing["time"], showing["url"])
-                for movie in movies
-                for showing in movie["showings"]
-            ],
-        )
+        showing_rows = [
+            (run_id, movie["slug"], movie["title"], showing["time"], showing["url"])
+            for movie in movies
+            for showing in movie["showings"]
+        ]
+        if showing_rows:
+            cursor = connection.cursor()
+            cursor.executemany(
+                sql("""INSERT INTO showings
+                   (run_id, movie_slug, movie_title, show_time, checkout_url)
+                   VALUES (?, ?, ?, ?, ?)"""),
+                showing_rows,
+            )
     return run_id
 
 
@@ -238,6 +243,9 @@ def schedule():
         return jsonify(snapshot)
     except (ValueError, requests.RequestException) as error:
         return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        logger.exception("Failed to load schedule for %s on %s", location, show_date)
+        return jsonify({"error": "Не удалось сохранить расписание", "detail": str(error)}), 500
 
 
 def collect_all_locations(locations=None):

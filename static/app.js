@@ -41,7 +41,10 @@ async function loadSchedule(refresh = false) {
 
   try {
     const response = await fetch(`/api/schedule?${query}`);
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : { error: `Сервер вернул HTTP ${response.status} вместо JSON` };
     if (!response.ok) throw new Error(data.error || 'Ошибка загрузки');
     state.movies = data.movies || [];
     const showings = state.movies.reduce((sum, movie) => sum + movie.showings.length, 0);
