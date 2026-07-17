@@ -65,6 +65,71 @@ async function loadSchedule(refresh = false) {
   }
 }
 
+async function refreshSchedules(locations, button, scopeLabel) {
+  if (state.loading) return;
+  state.loading = true;
+  const originalHtml = button.innerHTML;
+  const actionButtons = [$('#refresh'), $('#refreshAll')];
+  actionButtons.forEach((item) => { item.disabled = true; });
+  const config = window.HOOKY_CONFIG || { manualFutureDays: 13, todayByLocation: {} };
+  const jobs = [];
+  locations.forEach((location) => {
+    const startValue = config.todayByLocation[location];
+    if (!startValue) return;
+    const [year, month, day] = startValue.split('-').map(Number);
+    for (let offset = 0; offset <= config.manualFutureDays; offset += 1) {
+      const target = new Date(Date.UTC(year, month - 1, day + offset));
+      jobs.push({ location, date: target.toISOString().slice(0, 10) });
+    }
+  });
+
+  let completed = 0;
+  const failures = [];
+  const queue = [...jobs];
+  async function worker() {
+    while (queue.length) {
+      const job = queue.shift();
+      try {
+        const query = new URLSearchParams({ location: job.location, date: job.date, refresh: '1' });
+        const response = await fetch(`/api/schedule?${query}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      } catch (error) {
+        failures.push({ ...job, error: error.message });
+      } finally {
+        completed += 1;
+        button.textContent = `${completed}/${jobs.length}`;
+        $('#status').textContent = `${scopeLabel}: ${completed} из ${jobs.length}`;
+      }
+    }
+  }
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, worker));
+  } finally {
+    state.loading = false;
+    actionButtons.forEach((item) => { item.disabled = false; });
+    button.innerHTML = originalHtml;
+  }
+  await loadSchedule(false);
+  if (document.querySelector('[data-tab="comparison"]').classList.contains('active')) await loadComparison();
+  if (failures.length) {
+    $('#status').textContent = `Готово, ошибок: ${failures.length}`;
+    console.error('Hooky refresh failures', failures);
+  } else {
+    $('#status').textContent = `${scopeLabel}: обновлено ${jobs.length}`;
+  }
+}
+
+function refreshSelectedLocation() {
+  return refreshSchedules([$('#location').value], $('#refresh'), 'Обновление локации');
+}
+
+function refreshAllLocations() {
+  const locations = Array.from($('#location').options).map((option) => option.value);
+  return refreshSchedules(locations, $('#refreshAll'), 'Обновление всех локаций');
+}
+
 function renderChart(rows) {
   const chart = $('#chart');
   const points = rows;
@@ -131,12 +196,6 @@ async function loadHistory() {
   } catch (_) {
     $('#chart').innerHTML = '<div class="single-state">Не удалось загрузить историю.</div>';
   }
-}
-
-function isCurrentOrFutureSelected() {
-  const today = new Date();
-  const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  return $('#date').value >= localToday;
 }
 
 function updateCronCountdown() {
@@ -210,7 +269,8 @@ async function loadComparison() {
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
 $('#date').addEventListener('change', () => loadSchedule());
-$('#refresh').addEventListener('click', () => loadSchedule(isCurrentOrFutureSelected()));
+$('#refresh').addEventListener('click', refreshSelectedLocation);
+$('#refreshAll').addEventListener('click', refreshAllLocations);
 $('#historyFrom').addEventListener('change', loadHistory);
 $('#historyTo').addEventListener('change', loadHistory);
 $('#historyAll').addEventListener('click', () => {

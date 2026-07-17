@@ -7,16 +7,22 @@ import time
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from flask import Flask, jsonify, render_template, request
 
+psycopg: Any
+dict_row: Any
 try:
-    import psycopg
-    from psycopg.rows import dict_row
+    import psycopg as psycopg_module
+    from psycopg.rows import dict_row as psycopg_dict_row
+
+    psycopg = psycopg_module
+    dict_row = psycopg_dict_row
 except ImportError:  # Local SQLite development does not require PostgreSQL.
     psycopg = None
     dict_row = None
@@ -51,7 +57,8 @@ SITE_IDS = {
     "nashville": 224, "southlake": 206, "waxahachie": 218,
 }
 CIRCUIT_ID = "119"
-FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "13")), 31))
+FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "30")), 31))
+MANUAL_FUTURE_DAYS = 13
 SHOWINGS_QUERY = """
 query ($date: String, $siteIds: [ID]) {
   showingsForDate(date: $date, siteIds: $siteIds) {
@@ -130,19 +137,26 @@ def init_db() -> None:
             if attempt == 4:
                 raise
             time.sleep(2)
-    raise last_error
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Database initialization failed")
 
 
-def parse_movies(html: str, page_url: str) -> list[dict]:
+def parse_movies(html: str, page_url: str) -> list[dict[str, Any]]:
     """Parse the SSR fallback: movie link followed by its checkout links."""
     soup = BeautifulSoup(html, "html.parser")
-    movies: list[dict] = []
-    current = None
+    movies: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
     movie_pattern = re.compile(r"/movie/([^/?#]+)")
     showing_pattern = re.compile(r"/checkout/showing/([^/?#]+)/([^/?#]+)")
 
     for anchor in soup.find_all("a", href=True):
-        href = urljoin(page_url, anchor["href"])
+        if not isinstance(anchor, Tag):
+            continue
+        href_value = anchor.get("href")
+        if not isinstance(href_value, str):
+            continue
+        href = urljoin(page_url, href_value)
         text = " ".join(anchor.get_text(" ", strip=True).split())
         movie_match = movie_pattern.search(href)
         showing_match = showing_pattern.search(href)
@@ -185,7 +199,7 @@ def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
     if payload.get("errors"):
         raise ValueError(payload["errors"][0].get("message", "Hooky GraphQL error"))
     rows = ((payload.get("data") or {}).get("showingsForDate") or {}).get("data") or []
-    grouped = {}
+    grouped: dict[str, dict[str, Any]] = {}
     location_tz = ZoneInfo(LOCATION_TIMEZONES[location])
     for row in rows:
         movie_data = row.get("movie") or {}
@@ -219,10 +233,10 @@ def save_snapshot(location: str, show_date: str, movies: list[dict], source_url:
         ).fetchone()
 
         if existing and show_date < location_today:
-            return existing["id"]
+            return int(existing["id"])
 
         if existing:
-            run_id = existing["id"]
+            run_id: int = int(existing["id"])
             connection.execute(
                 sql("""UPDATE scrape_runs SET captured_at=?, source_url=?,
                        movie_count=?, showing_count=? WHERE id=?"""),
@@ -240,13 +254,18 @@ def save_snapshot(location: str, show_date: str, movies: list[dict], source_url:
                     insert_run + " RETURNING id",
                     (location, show_date, captured_at, source_url, len(movies), showing_count),
                 )
-                run_id = cursor.fetchone()["id"]
+                inserted = cursor.fetchone()
+                if inserted is None:
+                    raise RuntimeError("PostgreSQL did not return a snapshot id")
+                run_id = int(inserted["id"])
             else:
                 cursor = connection.execute(
                     insert_run,
                     (location, show_date, captured_at, source_url, len(movies), showing_count),
                 )
-                run_id = cursor.lastrowid
+                if cursor.lastrowid is None:
+                    raise RuntimeError("SQLite did not return a snapshot id")
+                run_id = int(cursor.lastrowid)
         showing_rows = [
             (run_id, movie["slug"], movie["title"], showing["time"], showing["url"])
             for movie in movies
@@ -275,7 +294,7 @@ def latest_snapshot(location: str, show_date: str):
         rows = connection.execute(
             sql("SELECT * FROM showings WHERE run_id=? ORDER BY id"), (run["id"],)
         ).fetchall()
-    grouped = {}
+    grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
         movie = grouped.setdefault(
             row["movie_slug"],
@@ -288,7 +307,20 @@ def latest_snapshot(location: str, show_date: str):
 @app.get("/")
 def index():
     hutto_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES["hutto"])).date().isoformat()
-    return render_template("index.html", locations=LOCATIONS, today=hutto_today)
+    today_by_location = {
+        location: datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
+        for location in LOCATIONS
+    }
+    return render_template(
+        "index.html",
+        locations=LOCATIONS,
+        today=hutto_today,
+        hooky_config={
+            "manualFutureDays": MANUAL_FUTURE_DAYS,
+            "cronFutureDays": FUTURE_DAYS,
+            "todayByLocation": today_by_location,
+        },
+    )
 
 
 @app.get("/health")

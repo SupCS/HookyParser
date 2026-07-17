@@ -15,7 +15,7 @@
   <main class="shell">
     <header class="hero">
       <div><span class="eyebrow">HOOKY ENTERTAINMENT · SHOWTIMES</span><h1>Hooky Parser<br><em>for <span id="heroLocation">Hutto</span></em></h1></div>
-      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Следующий сбор</b><small id="nextRefresh">Расчёт времени…</small></span></div><button class="primary" id="refresh">Обновить локацию <span>↗</span></button></div>
+      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Следующий сбор</b><small id="nextRefresh">Расчёт времени…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Обновить локацию <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Обновить все локации на 13 дней вперёд" aria-label="Обновить все локации">Все <span>↻</span></button></div></div>
     </header>
 
     <section class="toolbar" aria-label="Фильтры">
@@ -36,6 +36,7 @@
     <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА ПО ДНЯМ</span><h2>Сеансы по датам</h2><p>Одна итоговая точка на каждый день расписания.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="history-filters"><label><span>Дата с</span><div class="control date-control"><input id="historyFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="historyTo" type="date"></div></label><button class="secondary" id="historyAll" type="button">Весь период</button><small id="historyRangeLabel">Все доступные даты</small></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>Обновлено</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
     <section id="comparison" class="panel hidden"><div class="section-head"><div><span class="eyebrow">СРАВНЕНИЕ</span><h2>Локации за период</h2><p>Уникальные фильмы и суммарное количество сеансов.</p></div><div class="legend"><i></i> Чем больше, тем активнее</div></div><div class="compare-filters"><div class="compare-presets"><button class="preset active" data-range="week">Эта неделя</button><button class="preset" data-range="last7">Последние 7 дней</button><button class="preset" data-range="next7">Следующие 7 дней</button></div><label><span>Дата с</span><div class="control date-control"><input id="compareFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="compareTo" type="date"></div></label><button class="primary compare-submit" id="compareApply" type="button">Сравнить</button></div><div class="compare-summary" id="compareSummary"></div><div class="location-comparison" id="comparisonList"><div class="empty">Выберите период для сравнения.</div></div></section>
   </main>
+  <script>window.HOOKY_CONFIG = {{ hooky_config | tojson }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
