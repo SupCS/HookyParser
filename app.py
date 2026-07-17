@@ -99,6 +99,16 @@ def init_db() -> None:
                             connection.execute(statement)
                 else:
                     connection.executescript(schema)
+                connection.execute(
+                    """DELETE FROM scrape_runs
+                       WHERE id NOT IN (
+                           SELECT MAX(id) FROM scrape_runs GROUP BY location, show_date
+                       )"""
+                )
+                connection.execute(
+                    """CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_location_day
+                       ON scrape_runs(location, show_date)"""
+                )
             return
         except Exception as error:
             last_error = error
@@ -152,24 +162,43 @@ def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
 def save_snapshot(location: str, show_date: str, movies: list[dict], source_url: str) -> int:
     captured_at = datetime.now(timezone.utc).isoformat()
     showing_count = sum(len(movie["showings"]) for movie in movies)
+    location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
     with db() as connection:
-        insert_run = sql(
-            """INSERT INTO scrape_runs
-               (location, show_date, captured_at, source_url, movie_count, showing_count)
-               VALUES (?, ?, ?, ?, ?, ?)"""
-        )
-        if DATABASE_URL:
-            cursor = connection.execute(
-                insert_run + " RETURNING id",
-                (location, show_date, captured_at, source_url, len(movies), showing_count),
+        existing = connection.execute(
+            sql("""SELECT id FROM scrape_runs
+                   WHERE location=? AND show_date=? ORDER BY captured_at DESC LIMIT 1"""),
+            (location, show_date),
+        ).fetchone()
+
+        if existing and show_date < location_today:
+            return existing["id"]
+
+        if existing:
+            run_id = existing["id"]
+            connection.execute(
+                sql("""UPDATE scrape_runs SET captured_at=?, source_url=?,
+                       movie_count=?, showing_count=? WHERE id=?"""),
+                (captured_at, source_url, len(movies), showing_count, run_id),
             )
-            run_id = cursor.fetchone()["id"]
+            connection.execute(sql("DELETE FROM showings WHERE run_id=?"), (run_id,))
         else:
-            cursor = connection.execute(
-                insert_run,
-                (location, show_date, captured_at, source_url, len(movies), showing_count),
+            insert_run = sql(
+                """INSERT INTO scrape_runs
+                   (location, show_date, captured_at, source_url, movie_count, showing_count)
+                   VALUES (?, ?, ?, ?, ?, ?)"""
             )
-            run_id = cursor.lastrowid
+            if DATABASE_URL:
+                cursor = connection.execute(
+                    insert_run + " RETURNING id",
+                    (location, show_date, captured_at, source_url, len(movies), showing_count),
+                )
+                run_id = cursor.fetchone()["id"]
+            else:
+                cursor = connection.execute(
+                    insert_run,
+                    (location, show_date, captured_at, source_url, len(movies), showing_count),
+                )
+                run_id = cursor.lastrowid
         showing_rows = [
             (run_id, movie["slug"], movie["title"], showing["time"], showing["url"])
             for movie in movies

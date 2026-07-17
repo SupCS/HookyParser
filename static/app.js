@@ -73,7 +73,7 @@ function renderChart(rows) {
     return;
   }
   if (points.length === 1) {
-    chart.innerHTML = `<div class="single-state"><div><b>${points[0].showing_count}</b>сеансов в первом снимке<br>Линия динамики появится после следующего обновления.</div></div>`;
+    chart.innerHTML = `<div class="single-state"><div><b>${points[0].showing_count}</b>сеансов ${escapeHtml(points[0].show_date)}<br>Линия динамики появится, когда накопится следующий день.</div></div>`;
     return;
   }
 
@@ -94,7 +94,8 @@ function renderChart(rows) {
   const dots = coordinates.map(([px, py], index) => `<g><title>${points[index].show_date} · ${points[index].showing_count} сеансов</title><circle class="chart-dot" cx="${px}" cy="${py}" r="5"/></g>`).join('');
   const labels = points.map((row, index) => {
     if (index !== 0 && index !== points.length - 1 && index % Math.ceil(points.length / 5)) return '';
-    const label = new Date(row.captured_at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' });
+    const [year, month, day] = row.show_date.split('-');
+    const label = `${day}.${month}`;
     return `<text class="chart-label" text-anchor="middle" x="${x(index)}" y="${height - 8}">${label}</text>`;
   }).join('');
   chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Динамика количества сеансов">
@@ -120,6 +121,23 @@ function isTodaySelected() {
   return $('#date').value === localToday;
 }
 
+function updateCronCountdown() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setUTCMinutes(0, 0, 0);
+  if (now.getUTCHours() < 12) {
+    next.setUTCHours(12);
+  } else {
+    next.setUTCDate(next.getUTCDate() + 1);
+    next.setUTCHours(0);
+  }
+  const totalSeconds = Math.max(0, Math.floor((next - now) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  $('#nextRefresh').textContent = `через ${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
 $('#date').addEventListener('change', () => loadSchedule());
@@ -131,4 +149,6 @@ document.querySelectorAll('.tabs button').forEach((button) => button.addEventLis
 }));
 
 updateLocationHeading();
+updateCronCountdown();
+setInterval(updateCronCountdown, 1000);
 loadSchedule();

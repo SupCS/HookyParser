@@ -13,7 +13,7 @@
   <main class="shell">
     <header class="hero">
       <div><span class="eyebrow">HOOKY ENTERTAINMENT · SHOWTIMES</span><h1>Hooky Parser<br><em>for <span id="heroLocation">Hutto</span></em></h1></div>
-      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Railway Cron</b><small>Все локации каждые 12 часов</small></span></div><button class="primary" id="refresh">Обновить локацию <span>↗</span></button></div>
+      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Следующий сбор</b><small id="nextRefresh">Расчёт времени…</small></span></div><button class="primary" id="refresh">Обновить локацию <span>↗</span></button></div>
     </header>
 
     <section class="toolbar" aria-label="Фильтры">
@@ -31,7 +31,7 @@
 
     <nav class="tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="history">История</button></nav>
     <section id="schedule" class="panel"><div id="movieList" class="movie-list"><div class="empty">Загружаем расписание…</div></div></section>
-    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА</span><h2>История снимков</h2><p>Количество сеансов в последних 30 сохранённых снимках.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата сеансов</th><th>Снято</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА ПО ДНЯМ</span><h2>Сеансы по датам</h2><p>Одна итоговая точка на каждый день расписания.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>Обновлено</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
   </main>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
