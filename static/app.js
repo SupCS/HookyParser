@@ -24,10 +24,10 @@ function renderMovies() {
       <summary>
         <span class="rank">${String(index + 1).padStart(2, '0')}</span>
         <div><h3>${escapeHtml(movie.title)}</h3><p>${escapeHtml(movie.showings[0]?.time)} — ${escapeHtml(movie.showings.at(-1)?.time)}</p></div>
-        <span class="count">${movie.showings.length} сеанс.</span>
+        <span class="count">${movie.showings.length} showtimes</span>
       </summary>
       <div class="times">${movie.showings.map((show) => `<a href="${show.url}" target="_blank" rel="noreferrer">${escapeHtml(show.time)}</a>`).join('')}</div>
-    </details>`).join('') : '<div class="empty">Фильмы по этому запросу не найдены.</div>';
+    </details>`).join('') : '<div class="empty">No movies match your search.</div>';
 }
 
 async function loadSchedule(refresh = false) {
@@ -35,7 +35,7 @@ async function loadSchedule(refresh = false) {
   state.loading = true;
   const button = $('#refresh');
   button.disabled = true;
-  $('#status').textContent = 'Загрузка…';
+  $('#status').textContent = 'Loading…';
   const query = new URLSearchParams({ location: $('#location').value, date: $('#date').value });
   if (refresh) query.set('refresh', '1');
 
@@ -44,21 +44,21 @@ async function loadSchedule(refresh = false) {
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json()
-      : { error: `Сервер вернул HTTP ${response.status} вместо JSON` };
-    if (!response.ok) throw new Error(data.error || 'Ошибка загрузки');
+      : { error: `The server returned HTTP ${response.status} instead of JSON` };
+    if (!response.ok) throw new Error(data.error || 'Failed to load');
     state.movies = data.movies || [];
     const showings = state.movies.reduce((sum, movie) => sum + movie.showings.length, 0);
     $('#movieCount').textContent = state.movies.length;
     $('#showingCount').textContent = showings;
     $('#average').textContent = state.movies.length ? (showings / state.movies.length).toFixed(1) : '0';
-    $('#captured').textContent = data.run ? new Date(data.run.captured_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : '—';
-    $('#status').textContent = refresh ? 'Новый снимок сохранён' : 'Сохранённые данные';
+    $('#captured').textContent = data.run ? new Date(data.run.captured_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
+    $('#status').textContent = refresh ? 'New snapshot saved' : 'Saved data';
     renderMovies();
     await loadHistory();
   } catch (error) {
     state.movies = [];
     $('#movieList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
-    $('#status').textContent = 'Ошибка загрузки';
+    $('#status').textContent = 'Failed to load';
   } finally {
     state.loading = false;
     button.disabled = false;
@@ -99,7 +99,7 @@ async function refreshSchedules(locations, button, scopeLabel) {
       } finally {
         completed += 1;
         button.textContent = `${completed}/${jobs.length}`;
-        $('#status').textContent = `${scopeLabel}: ${completed} из ${jobs.length}`;
+        $('#status').textContent = `${scopeLabel}: ${completed} of ${jobs.length}`;
       }
     }
   }
@@ -114,31 +114,31 @@ async function refreshSchedules(locations, button, scopeLabel) {
   await loadSchedule(false);
   if (document.querySelector('[data-tab="comparison"]').classList.contains('active')) await loadComparison();
   if (failures.length) {
-    $('#status').textContent = `Готово, ошибок: ${failures.length}`;
+    $('#status').textContent = `Done with ${failures.length} errors`;
     console.error('Hooky refresh failures', failures);
   } else {
-    $('#status').textContent = `${scopeLabel}: обновлено ${jobs.length}`;
+    $('#status').textContent = `${scopeLabel}: ${jobs.length} updated`;
   }
 }
 
 function refreshSelectedLocation() {
-  return refreshSchedules([$('#location').value], $('#refresh'), 'Обновление локации');
+  return refreshSchedules([$('#location').value], $('#refresh'), 'Refreshing location');
 }
 
 function refreshAllLocations() {
   const locations = Array.from($('#location').options).map((option) => option.value);
-  return refreshSchedules(locations, $('#refreshAll'), 'Обновление всех локаций');
+  return refreshSchedules(locations, $('#refreshAll'), 'Refreshing all locations');
 }
 
 function renderChart(rows) {
   const chart = $('#chart');
   const points = rows;
   if (!points.length) {
-    chart.innerHTML = '<div class="single-state">Обновите данные, чтобы появился первый снимок.</div>';
+    chart.innerHTML = '<div class="single-state">Refresh the data to create the first snapshot.</div>';
     return;
   }
   if (points.length === 1) {
-    chart.innerHTML = `<div class="single-state"><div><b>${points[0].showing_count}</b>сеансов ${escapeHtml(points[0].show_date)}<br>Линия динамики появится, когда накопится следующий день.</div></div>`;
+    chart.innerHTML = `<div class="single-state"><div><b>${points[0].showing_count}</b>showtimes on ${escapeHtml(points[0].show_date)}<br>The trend line will appear once another day is available.</div></div>`;
     return;
   }
 
@@ -156,14 +156,14 @@ function renderChart(rows) {
     const value = Math.round(max - ratio * range);
     return `<line class="grid-line" x1="${left}" y1="${gy}" x2="${width - right}" y2="${gy}"/><text class="chart-label" x="0" y="${gy + 4}">${value}</text>`;
   }).join('');
-  const dots = coordinates.map(([px, py], index) => `<g><title>${points[index].show_date} · ${points[index].showing_count} сеансов</title><circle class="chart-dot" cx="${px}" cy="${py}" r="5"/></g>`).join('');
+  const dots = coordinates.map(([px, py], index) => `<g><title>${points[index].show_date} · ${points[index].showing_count} showtimes</title><circle class="chart-dot" cx="${px}" cy="${py}" r="5"/></g>`).join('');
   const labels = points.map((row, index) => {
     if (index !== 0 && index !== points.length - 1 && index % Math.ceil(points.length / 5)) return '';
     const [year, month, day] = row.show_date.split('-');
     const label = `${day}.${month}`;
     return `<text class="chart-label" text-anchor="middle" x="${x(index)}" y="${height - 8}">${label}</text>`;
   }).join('');
-  chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Динамика количества сеансов">
+  chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Showtime count trend">
     <defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0009dc" stop-opacity=".16"/><stop offset="1" stop-color="#0009dc" stop-opacity="0"/></linearGradient></defs>
     ${grids}<polygon class="chart-area" points="${area}"/><polyline class="chart-line" points="${line}"/>${dots}${labels}
   </svg>`;
@@ -176,25 +176,25 @@ async function loadHistory() {
     if ($('#historyTo').value) query.set('date_to', $('#historyTo').value);
     const response = await fetch(`/api/history?${query}`);
     const rows = await response.json();
-    if (!response.ok) throw new Error(rows.error || 'Не удалось загрузить историю');
+    if (!response.ok) throw new Error(rows.error || 'Could not load history');
     $('#historyRows').innerHTML = rows.slice().reverse().map((row) => {
       const movies = row.movies || [];
-      const movieList = movies.map((movie) => `<li>${escapeHtml(movie.title)}</li>`).join('') || '<li>Нет данных</li>';
-      const showingBreakdown = movies.map((movie) => `<li><span>${escapeHtml(movie.title)}</span><b>${movie.showing_count}</b></li>`).join('') || '<li>Нет данных</li>';
-      return `<tr><td>${row.show_date}</td><td>${new Date(row.captured_at).toLocaleString('ru')}</td>
-        <td><span class="detail-trigger" tabindex="0">${row.movie_count}<span class="data-popover"><strong>Фильмы</strong><ul>${movieList}</ul></span></span></td>
-        <td><span class="detail-trigger" tabindex="0">${row.showing_count}<span class="data-popover breakdown"><strong>Сеансы по фильмам</strong><ul>${showingBreakdown}</ul></span></span></td></tr>`;
-    }).join('') || '<tr><td colspan="4">История пока пуста</td></tr>';
+      const movieList = movies.map((movie) => `<li>${escapeHtml(movie.title)}</li>`).join('') || '<li>No data</li>';
+      const showingBreakdown = movies.map((movie) => `<li><span>${escapeHtml(movie.title)}</span><b>${movie.showing_count}</b></li>`).join('') || '<li>No data</li>';
+      return `<tr><td>${row.show_date}</td><td>${new Date(row.captured_at).toLocaleString('en-US')}</td>
+        <td><span class="detail-trigger" tabindex="0">${row.movie_count}<span class="data-popover"><strong>Movies</strong><ul>${movieList}</ul></span></span></td>
+        <td><span class="detail-trigger" tabindex="0">${row.showing_count}<span class="data-popover breakdown"><strong>Showtimes by movie</strong><ul>${showingBreakdown}</ul></span></span></td></tr>`;
+    }).join('') || '<tr><td colspan="4">History is empty</td></tr>';
     if (rows.length) {
       const first = rows[0].show_date;
       const last = rows.at(-1).show_date;
-      $('#historyRangeLabel').textContent = `${rows.length} дн. · ${first} — ${last}`;
+      $('#historyRangeLabel').textContent = `${rows.length} days · ${first} — ${last}`;
     } else {
-      $('#historyRangeLabel').textContent = 'Нет данных в выбранном диапазоне';
+      $('#historyRangeLabel').textContent = 'No data in the selected range';
     }
     renderChart(rows);
   } catch (_) {
-    $('#chart').innerHTML = '<div class="single-state">Не удалось загрузить историю.</div>';
+    $('#chart').innerHTML = '<div class="single-state">Could not load history.</div>';
   }
 }
 
@@ -212,7 +212,7 @@ function updateCronCountdown() {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  $('#nextRefresh').textContent = `через ${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  $('#nextRefresh').textContent = `in ${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function toIsoDate(value) {
@@ -244,21 +244,21 @@ async function loadComparison() {
   const dateTo = $('#compareTo').value;
   if (!dateFrom || !dateTo) return;
   const list = $('#comparisonList');
-  list.innerHTML = '<div class="empty">Считаем фильмы и сеансы…</div>';
+  list.innerHTML = '<div class="empty">Counting movies and showtimes…</div>';
   try {
     const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
     const response = await fetch(`/api/compare?${query}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Не удалось построить сравнение');
+    if (!response.ok) throw new Error(data.error || 'Could not build comparison');
     const locations = data.locations || [];
     const totalShowings = locations.reduce((sum, location) => sum + location.showing_count, 0);
     const uniqueTitles = new Set(locations.flatMap((location) => location.movies.map((movie) => movie.title)));
     const activeLocations = locations.filter((location) => location.days_available > 0).length;
-    $('#compareSummary').innerHTML = `<article><span>Всего сеансов</span><strong>${totalShowings}</strong></article><article><span>Уникальных фильмов</span><strong>${uniqueTitles.size}</strong></article><article><span>Локаций с данными</span><strong>${activeLocations}/${locations.length}</strong></article>`;
+    $('#compareSummary').innerHTML = `<article><span>Total showtimes</span><strong>${totalShowings}</strong></article><article><span>Unique movies</span><strong>${uniqueTitles.size}</strong></article><article><span>Locations with data</span><strong>${activeLocations}/${locations.length}</strong></article>`;
     const maxShowings = Math.max(1, ...locations.map((location) => location.showing_count));
     list.innerHTML = locations.map((location) => {
-      const movies = location.movies.map((movie) => `<li><span>${escapeHtml(movie.title)}</span><b>${movie.showing_count}</b>${data.single_day && movie.times.length ? `<div class="comparison-times">${movie.times.map((time) => `<em>${escapeHtml(time)}</em>`).join('')}</div>` : ''}</li>`).join('') || '<li><span>Нет расписания за этот период</span></li>';
-      return `<article class="location-card ${location.showing_count ? '' : 'no-data'}"><div class="location-card-header"><div class="location-title"><h3>${escapeHtml(location.name)}</h3><strong>${location.showing_count}<small>сеансов</small></strong></div><div class="location-meta"><span>${location.unique_movie_count} фильм.</span><span>${location.days_available}/${data.requested_days} дн. с данными</span></div><div class="comparison-bar"><i style="width:${location.showing_count / maxShowings * 100}%"></i></div></div><details><summary>Фильмы за период · ${location.unique_movie_count}</summary><ul class="comparison-movies">${movies}</ul></details></article>`;
+      const movies = location.movies.map((movie) => `<li><span>${escapeHtml(movie.title)}</span><b>${movie.showing_count}</b>${data.single_day && movie.times.length ? `<div class="comparison-times">${movie.times.map((time) => `<em>${escapeHtml(time)}</em>`).join('')}</div>` : ''}</li>`).join('') || '<li><span>No schedule for this period</span></li>';
+      return `<article class="location-card ${location.showing_count ? '' : 'no-data'}"><div class="location-card-header"><div class="location-title"><h3>${escapeHtml(location.name)}</h3><strong>${location.showing_count}<small>showtimes</small></strong></div><div class="location-meta"><span>${location.unique_movie_count} movies</span><span>${location.days_available}/${data.requested_days} days with data</span></div><div class="comparison-bar"><i style="width:${location.showing_count / maxShowings * 100}%"></i></div></div><details><summary>Movies in this period · ${location.unique_movie_count}</summary><ul class="comparison-movies">${movies}</ul></details></article>`;
     }).join('');
   } catch (error) {
     list.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
@@ -292,7 +292,7 @@ document.querySelectorAll('.tabs button').forEach((button) => button.addEventLis
   document.body.classList.toggle('compare-mode', button.dataset.tab === 'comparison');
   if (button.dataset.tab === 'comparison') {
     $('#heroLocation').textContent = 'All Locations';
-    document.title = 'Hooky Parser — сравнение локаций';
+    document.title = 'Hooky Parser — location comparison';
     loadComparison();
   } else {
     updateLocationHeading();

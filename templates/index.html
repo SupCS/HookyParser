@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,26 +15,26 @@
   <main class="shell">
     <header class="hero">
       <div><span class="eyebrow">HOOKY ENTERTAINMENT · SHOWTIMES</span><h1>Hooky Parser<br><em>for <span id="heroLocation">Hutto</span></em></h1></div>
-      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Следующий сбор</b><small id="nextRefresh">Расчёт времени…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Обновить локацию <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Обновить все локации на 13 дней вперёд" aria-label="Обновить все локации">Все <span>↻</span></button></div></div>
+      <div class="hero-actions"><div class="auto-status"><i></i><span><b>Next collection</b><small id="nextRefresh">Calculating…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Refresh location <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Refresh all locations for the next 13 days" aria-label="Refresh all locations">All <span>↻</span></button></div></div>
     </header>
 
-    <section class="toolbar" aria-label="Фильтры">
-      <label><span>Локация</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>
-      <label><span>Дата сеансов</span><div class="control date-control"><input id="date" type="date" value="{{ today }}"></div></label>
-      <label class="search"><span>Поиск фильма</span><div class="control search-control"><input id="search" type="search" placeholder="Например, Superman"></div></label>
+    <section class="toolbar" aria-label="Filters">
+      <label><span>Location</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>
+      <label><span>Show date</span><div class="control date-control"><input id="date" type="date" value="{{ today }}"></div></label>
+      <label class="search"><span>Search movies</span><div class="control search-control"><input id="search" type="search" placeholder="For example, Superman"></div></label>
     </section>
 
     <section class="metrics" aria-live="polite">
-      <article><span>Фильмов</span><strong id="movieCount">—</strong><small>в выбранную дату</small></article>
-      <article><span>Сеансов</span><strong id="showingCount">—</strong><small>всего в расписании</small></article>
-      <article><span>В среднем</span><strong id="average">—</strong><small>сеансов на фильм</small></article>
-      <article class="status-card"><span>Последний снимок</span><strong id="captured">—</strong><small id="status">Загрузка…</small></article>
+      <article><span>Movies</span><strong id="movieCount">—</strong><small>on the selected date</small></article>
+      <article><span>Showtimes</span><strong id="showingCount">—</strong><small>total scheduled</small></article>
+      <article><span>Average</span><strong id="average">—</strong><small>showtimes per movie</small></article>
+      <article class="status-card"><span>Latest snapshot</span><strong id="captured">—</strong><small id="status">Loading…</small></article>
     </section>
 
-    <nav class="tabs"><button class="active" data-tab="schedule">Расписание</button><button data-tab="history">История</button><button data-tab="comparison">Сравнение локаций</button></nav>
-    <section id="schedule" class="panel"><div id="movieList" class="movie-list"><div class="empty">Загружаем расписание…</div></div></section>
-    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">ДИНАМИКА ПО ДНЯМ</span><h2>Сеансы по датам</h2><p>Одна итоговая точка на каждый день расписания.</p></div><div class="legend"><i></i> Сеансы</div></div><div class="history-filters"><label><span>Дата с</span><div class="control date-control"><input id="historyFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="historyTo" type="date"></div></label><button class="secondary" id="historyAll" type="button">Весь период</button><small id="historyRangeLabel">Все доступные даты</small></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Дата</th><th>Обновлено</th><th>Фильмов</th><th>Сеансов</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
-    <section id="comparison" class="panel hidden"><div class="section-head"><div><span class="eyebrow">СРАВНЕНИЕ</span><h2>Локации за период</h2><p>Уникальные фильмы и суммарное количество сеансов.</p></div><div class="legend"><i></i> Чем больше, тем активнее</div></div><div class="compare-filters"><div class="compare-presets"><button class="preset active" data-range="week">Эта неделя</button><button class="preset" data-range="last7">Последние 7 дней</button><button class="preset" data-range="next7">Следующие 7 дней</button></div><label><span>Дата с</span><div class="control date-control"><input id="compareFrom" type="date"></div></label><label><span>Дата по</span><div class="control date-control"><input id="compareTo" type="date"></div></label><button class="primary compare-submit" id="compareApply" type="button">Сравнить</button></div><div class="compare-summary" id="compareSummary"></div><div class="location-comparison" id="comparisonList"><div class="empty">Выберите период для сравнения.</div></div></section>
+    <nav class="tabs"><button class="active" data-tab="schedule">Schedule</button><button data-tab="history">History</button><button data-tab="comparison">Compare locations</button></nav>
+    <section id="schedule" class="panel"><div id="movieList" class="movie-list"><div class="empty">Loading schedule…</div></div></section>
+    <section id="history" class="panel hidden"><div class="section-head"><div><span class="eyebrow">DAILY TRENDS</span><h2>Showtimes by date</h2><p>One final data point for each schedule date.</p></div><div class="legend"><i></i> Showtimes</div></div><div class="history-filters"><label><span>From</span><div class="control date-control"><input id="historyFrom" type="date"></div></label><label><span>To</span><div class="control date-control"><input id="historyTo" type="date"></div></label><button class="secondary" id="historyAll" type="button">All time</button><small id="historyRangeLabel">All available dates</small></div><div class="chart" id="chart"></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Updated</th><th>Movies</th><th>Showtimes</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+    <section id="comparison" class="panel hidden"><div class="section-head"><div><span class="eyebrow">COMPARISON</span><h2>Locations over time</h2><p>Unique movies and the total number of showtimes.</p></div><div class="legend"><i></i> More means more activity</div></div><div class="compare-filters"><div class="compare-presets"><button class="preset active" data-range="week">This week</button><button class="preset" data-range="last7">Last 7 days</button><button class="preset" data-range="next7">Next 7 days</button></div><label><span>From</span><div class="control date-control"><input id="compareFrom" type="date"></div></label><label><span>To</span><div class="control date-control"><input id="compareTo" type="date"></div></label><button class="primary compare-submit" id="compareApply" type="button">Compare</button></div><div class="compare-summary" id="compareSummary"></div><div class="location-comparison" id="comparisonList"><div class="empty">Select a date range to compare.</div></div></section>
   </main>
   <script>window.HOOKY_CONFIG = {{ hooky_config | tojson }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>

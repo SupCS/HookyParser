@@ -176,7 +176,7 @@ def parse_movies(html: str, page_url: str) -> list[dict[str, Any]]:
 
 def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
     if location not in LOCATIONS:
-        raise ValueError("Неизвестная локация")
+        raise ValueError("Unknown location")
     datetime.strptime(show_date, "%Y-%m-%d")
     page_url = f"{BASE_URL}/{location}/feature-films/"
     site_id = SITE_IDS[location]
@@ -345,7 +345,7 @@ def schedule():
         snapshot = None if refresh else latest_snapshot(location, show_date)
         if snapshot is None:
             if show_date < location_today:
-                return jsonify({"error": "Для этой прошедшей даты нет сохранённых данных, а Hooky больше не публикует её расписание."}), 404
+                return jsonify({"error": "No saved data is available for this past date, and Hooky no longer publishes its schedule."}), 404
             movies, source_url = fetch_schedule(location, show_date)
             save_snapshot(location, show_date, movies, source_url)
             snapshot = latest_snapshot(location, show_date)
@@ -354,7 +354,7 @@ def schedule():
         return jsonify({"error": str(error)}), 400
     except Exception as error:
         logger.exception("Failed to load schedule for %s on %s", location, show_date)
-        return jsonify({"error": "Не удалось сохранить расписание", "detail": str(error)}), 500
+        return jsonify({"error": "Could not save the schedule", "detail": str(error)}), 500
 
 
 def collect_all_locations(locations=None):
