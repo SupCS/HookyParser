@@ -19,15 +19,20 @@ function updateLocationHeading() {
 function renderMovies() {
   const term = $('#search').value.trim().toLowerCase();
   const movies = state.movies.filter((movie) => movie.title.toLowerCase().includes(term));
-  $('#movieList').innerHTML = movies.length ? movies.map((movie, index) => `
+  $('#movieList').innerHTML = movies.length ? movies.map((movie, index) => {
+    const popularity = Number.isInteger(movie.imdb_popularity)
+      ? `<span class="popularity" title="Current IMDb Popularity rank">IMDb popularity <b>#${movie.imdb_popularity.toLocaleString('en-US')}</b></span>`
+      : '<span class="popularity unavailable" title="The IMDb rank has not been fetched yet">IMDb popularity —</span>';
+    return `
     <details class="movie" ${index === 0 ? 'open' : ''}>
       <summary>
         <span class="rank">${String(index + 1).padStart(2, '0')}</span>
         <div><h3>${escapeHtml(movie.title)}</h3><p>${escapeHtml(movie.showings[0]?.time)} — ${escapeHtml(movie.showings.at(-1)?.time)}</p></div>
-        <span class="count">${movie.showings.length} showtimes</span>
+        <div class="movie-badges">${popularity}<span class="count">${movie.showings.length} showtimes</span></div>
       </summary>
       <div class="times">${movie.showings.map((show) => `<a href="${show.url}" target="_blank" rel="noreferrer">${escapeHtml(show.time)}</a>`).join('')}</div>
-    </details>`).join('') : '<div class="empty">No movies match your search.</div>';
+    </details>`;
+  }).join('') : '<div class="empty">No movies match your search.</div>';
 }
 
 async function loadSchedule(refresh = false) {

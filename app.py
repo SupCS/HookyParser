@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup, Tag
 from flask import Flask, jsonify, render_template, request
+
+from imdb_release_helper import lookup_movie, normalize_title
 
 psycopg: Any
 dict_row: Any
@@ -59,6 +62,7 @@ SITE_IDS = {
 CIRCUIT_ID = "119"
 FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "30")), 31))
 MANUAL_FUTURE_DAYS = 13
+POPULARITY_CACHE_HOURS = max(1, int(os.environ.get("IMDB_POPULARITY_CACHE_HOURS", "24")))
 SHOWINGS_QUERY = """
 query ($date: String, $siteIds: [ID]) {
   showingsForDate(date: $date, siteIds: $siteIds) {
@@ -110,6 +114,13 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_runs_lookup
             ON scrape_runs(location, show_date, captured_at DESC);
+            CREATE TABLE IF NOT EXISTS movie_popularity (
+                normalized_title TEXT PRIMARY KEY,
+                movie_title TEXT NOT NULL,
+                imdb_id TEXT NOT NULL,
+                imdb_popularity INTEGER,
+                fetched_at TEXT NOT NULL
+            );
             """.format(primary_key="BIGSERIAL PRIMARY KEY" if DATABASE_URL else "INTEGER PRIMARY KEY")
     last_error = None
     for attempt in range(5):
@@ -222,6 +233,7 @@ def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
 
 
 def save_snapshot(location: str, show_date: str, movies: list[dict], source_url: str) -> int:
+    update_movie_popularity(movies)
     captured_at = datetime.now(timezone.utc).isoformat()
     showing_count = sum(len(movie["showings"]) for movie in movies)
     location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
@@ -301,7 +313,76 @@ def latest_snapshot(location: str, show_date: str):
             {"slug": row["movie_slug"], "title": row["movie_title"], "showings": []},
         )
         movie["showings"].append({"time": row["show_time"], "url": row["checkout_url"]})
-    return {"run": dict(run), "movies": list(grouped.values())}
+    movies = list(grouped.values())
+    update_movie_popularity(movies)
+    attach_cached_popularity(movies)
+    return {"run": dict(run), "movies": movies}
+
+
+def attach_cached_popularity(movies: list[dict]) -> None:
+    """Attach a nullable popularity field to every movie returned by the API."""
+    keys = [normalize_title(movie["title"]) for movie in movies]
+    cached: dict[str, dict] = {}
+    if keys:
+        placeholders = ",".join("?" for _ in keys)
+        with db() as connection:
+            rows = connection.execute(
+                sql(f"SELECT normalized_title, imdb_id, imdb_popularity, fetched_at FROM movie_popularity WHERE normalized_title IN ({placeholders})"),
+                keys,
+            ).fetchall()
+        cached = {row["normalized_title"]: dict(row) for row in rows}
+    for movie in movies:
+        item = cached.get(normalize_title(movie["title"]), {})
+        movie["imdb_id"] = item.get("imdb_id")
+        movie["imdb_popularity"] = item.get("imdb_popularity")
+        movie["imdb_popularity_fetched_at"] = item.get("fetched_at")
+
+
+def update_movie_popularity(movies: list[dict]) -> None:
+    """Refresh new or stale titles without making schedule collection depend on IMDb."""
+    if not os.environ.get("OMDB_API_KEY") or not movies:
+        return
+    now = datetime.now(timezone.utc)
+    with db() as connection:
+        rows = connection.execute("SELECT normalized_title, fetched_at FROM movie_popularity").fetchall()
+    cached_at = {row["normalized_title"]: datetime.fromisoformat(row["fetched_at"]) for row in rows}
+    due: dict[str, dict] = {}
+    for movie in movies:
+        key = normalize_title(movie["title"])
+        fetched_at = cached_at.get(key)
+        if fetched_at and (now - fetched_at).total_seconds() < POPULARITY_CACHE_HOURS * 3600:
+            continue
+        due[key] = movie
+    if not due:
+        return
+
+    with ThreadPoolExecutor(max_workers=min(4, len(due))) as executor:
+        futures = {executor.submit(lookup_movie, movie["title"]): (key, movie) for key, movie in due.items()}
+        for future in as_completed(futures):
+            key, movie = futures[future]
+            try:
+                result = future.result()
+                with db() as connection:
+                    connection.execute(
+                        sql("""INSERT INTO movie_popularity
+                            (normalized_title, movie_title, imdb_id, imdb_popularity, fetched_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(normalized_title) DO UPDATE SET
+                            movie_title=excluded.movie_title, imdb_id=excluded.imdb_id,
+                            imdb_popularity=excluded.imdb_popularity, fetched_at=excluded.fetched_at"""),
+                        (key, movie["title"], result.imdb_id, result.rank, result.fetched_at),
+                    )
+            except Exception as error:
+                logger.warning("IMDb popularity lookup failed for %s: %s", movie["title"], error)
+                failed_at = datetime.now(timezone.utc).isoformat()
+                with db() as connection:
+                    connection.execute(
+                        sql("""INSERT INTO movie_popularity
+                            (normalized_title, movie_title, imdb_id, imdb_popularity, fetched_at)
+                            VALUES (?, ?, ?, NULL, ?)
+                            ON CONFLICT(normalized_title) DO UPDATE SET fetched_at=excluded.fetched_at"""),
+                        (key, movie["title"], "", failed_at),
+                    )
 
 
 @app.get("/")
