@@ -38,7 +38,7 @@ python collect.py
 Создайте сервис из этого GitHub-репозитория. `railway.toml` автоматически запускает:
 
 ```text
-gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 90 app:app
+gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 90 --access-logfile - --error-logfile - app:app
 ```
 
 В Variables добавьте reference variable:

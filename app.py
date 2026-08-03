@@ -63,6 +63,9 @@ CIRCUIT_ID = "119"
 FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "30")), 31))
 MANUAL_FUTURE_DAYS = 13
 POPULARITY_CACHE_HOURS = max(1, int(os.environ.get("IMDB_POPULARITY_CACHE_HOURS", "24")))
+POPULARITY_ERROR_CACHE_MINUTES = max(
+    1, int(os.environ.get("IMDB_POPULARITY_ERROR_CACHE_MINUTES", "15"))
+)
 SHOWINGS_QUERY = """
 query ($date: String, $siteIds: [ID]) {
   showingsForDate(date: $date, siteIds: $siteIds) {
@@ -74,6 +77,8 @@ query ($date: String, $siteIds: [ID]) {
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+_missing_omdb_key_logged = False
 
 
 def db():
@@ -340,22 +345,39 @@ def attach_cached_popularity(movies: list[dict]) -> None:
 
 def update_movie_popularity(movies: list[dict]) -> None:
     """Refresh new or stale titles without making schedule collection depend on IMDb."""
-    if not os.environ.get("OMDB_API_KEY") or not movies:
+    global _missing_omdb_key_logged
+    if not movies:
+        return
+    if not os.environ.get("OMDB_API_KEY"):
+        if not _missing_omdb_key_logged:
+            logger.warning("IMDb popularity disabled: OMDB_API_KEY is missing in the web service")
+            _missing_omdb_key_logged = True
         return
     now = datetime.now(timezone.utc)
     with db() as connection:
-        rows = connection.execute("SELECT normalized_title, fetched_at FROM movie_popularity").fetchall()
-    cached_at = {row["normalized_title"]: datetime.fromisoformat(row["fetched_at"]) for row in rows}
+        rows = connection.execute(
+            "SELECT normalized_title, imdb_id, fetched_at FROM movie_popularity"
+        ).fetchall()
+    cached = {row["normalized_title"]: row for row in rows}
     due: dict[str, dict] = {}
     for movie in movies:
         key = normalize_title(movie["title"])
-        fetched_at = cached_at.get(key)
-        if fetched_at and (now - fetched_at).total_seconds() < POPULARITY_CACHE_HOURS * 3600:
-            continue
+        cached_row = cached.get(key)
+        if cached_row:
+            fetched_at = datetime.fromisoformat(cached_row["fetched_at"])
+            ttl = (
+                POPULARITY_CACHE_HOURS * 3600
+                if cached_row["imdb_id"]
+                else POPULARITY_ERROR_CACHE_MINUTES * 60
+            )
+            if (now - fetched_at).total_seconds() < ttl:
+                continue
         due[key] = movie
     if not due:
+        logger.info("IMDb popularity cache is fresh for %d movie(s)", len(movies))
         return
 
+    logger.info("IMDb popularity lookup started for %d movie(s)", len(due))
     with ThreadPoolExecutor(max_workers=min(4, len(due))) as executor:
         futures = {executor.submit(lookup_movie, movie["title"]): (key, movie) for key, movie in due.items()}
         for future in as_completed(futures):
@@ -372,6 +394,10 @@ def update_movie_popularity(movies: list[dict]) -> None:
                             imdb_popularity=excluded.imdb_popularity, fetched_at=excluded.fetched_at"""),
                         (key, movie["title"], result.imdb_id, result.rank, result.fetched_at),
                     )
+                logger.info(
+                    "IMDb popularity updated for %s: #%s (%s)",
+                    movie["title"], result.rank, result.imdb_id,
+                )
             except Exception as error:
                 logger.warning("IMDb popularity lookup failed for %s: %s", movie["title"], error)
                 failed_at = datetime.now(timezone.utc).isoformat()
