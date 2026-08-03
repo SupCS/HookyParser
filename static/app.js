@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { movies: [], loading: false };
+const state = { movies: [], loading: false, rangeView: false };
 
 function escapeHtml(value) {
   const node = document.createElement('span');
@@ -19,6 +19,21 @@ function updateLocationHeading() {
 function renderMovies() {
   const term = $('#search').value.trim().toLowerCase();
   const movies = state.movies.filter((movie) => movie.title.toLowerCase().includes(term));
+  if (state.rangeView) {
+    $('#movieList').innerHTML = movies.length ? movies.map((movie, index) => {
+      const popularity = Number.isInteger(movie.imdb_popularity)
+        ? `<span class="popularity" title="Current IMDb Popularity rank">IMDb popularity <b>#${movie.imdb_popularity.toLocaleString('en-US')}</b></span>`
+        : '<span class="popularity unavailable">IMDb popularity —</span>';
+      const totalShowings = movie.dates.reduce((sum, day) => sum + day.showings.length, 0);
+      const days = movie.dates.map((day) => {
+        const date = new Date(`${day.date}T00:00:00Z`);
+        const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+        return `<button class="range-day" type="button" data-show-date="${day.date}" title="Open this day's showtimes"><span class="range-day-label"><b>${escapeHtml(label)}</b></span><span class="range-day-count">${day.showings.length} showtimes · view day →</span></button>`;
+      }).join('');
+      return `<details class="movie" ${movies.length === 1 || index === 0 ? 'open' : ''}><summary><span class="rank">${String(index + 1).padStart(2, '0')}</span><div><h3>${escapeHtml(movie.title)}</h3><p>${movie.dates.length} day${movie.dates.length === 1 ? '' : 's'} in this window</p></div><div class="movie-badges">${popularity}<span class="count">${totalShowings} showtimes</span></div></summary><div class="range-dates">${days}</div></details>`;
+    }).join('') : '<div class="empty">No movies match your search in this 14-day window.</div>';
+    return;
+  }
   $('#movieList').innerHTML = movies.length ? movies.map((movie, index) => {
     const popularity = Number.isInteger(movie.imdb_popularity)
       ? `<span class="popularity" title="Current IMDb Popularity rank">IMDb popularity <b>#${movie.imdb_popularity.toLocaleString('en-US')}</b></span>`
@@ -36,6 +51,8 @@ function renderMovies() {
 }
 
 async function loadSchedule(refresh = false) {
+  state.rangeView = $('#date').value !== $('#dateTo').value;
+  if (state.rangeView && !refresh) return loadScheduleRange();
   if (state.loading) return;
   state.loading = true;
   const button = $('#refresh');
@@ -60,6 +77,35 @@ async function loadSchedule(refresh = false) {
     $('#status').textContent = refresh ? 'New snapshot saved' : 'Saved data';
     renderMovies();
     await loadHistory();
+  } catch (error) {
+    state.movies = [];
+    $('#movieList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    $('#status').textContent = 'Failed to load';
+  } finally {
+    state.loading = false;
+    button.disabled = false;
+  }
+}
+
+async function loadScheduleRange() {
+  if (state.loading) return;
+  state.loading = true;
+  const button = $('#refresh');
+  button.disabled = true;
+  $('#status').textContent = 'Loading date range…';
+  const query = new URLSearchParams({ location: $('#location').value, date_from: $('#date').value, date_to: $('#dateTo').value });
+  try {
+    const response = await fetch(`/api/schedule-range?${query}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load date range');
+    state.movies = data.movies || [];
+    const showings = state.movies.reduce((total, movie) => total + movie.dates.reduce((sum, day) => sum + day.showings.length, 0), 0);
+    $('#movieCount').textContent = state.movies.length;
+    $('#showingCount').textContent = showings;
+    $('#average').textContent = state.movies.length ? (showings / state.movies.length).toFixed(1) : '0';
+    $('#captured').textContent = data.captured_at ? new Date(data.captured_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
+    $('#status').textContent = `${data.available_days}/${data.requested_days} days with saved data`;
+    renderMovies();
   } catch (error) {
     state.movies = [];
     $('#movieList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
@@ -374,7 +420,23 @@ async function loadReleaseTimeline() {
 
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
-$('#date').addEventListener('change', () => loadSchedule());
+$('#date').addEventListener('change', () => {
+  if ($('#date').value > $('#dateTo').value) $('#dateTo').value = $('#date').value;
+  $('#dateTo').min = $('#date').value;
+  loadSchedule();
+});
+$('#dateTo').addEventListener('change', () => {
+  if ($('#dateTo').value < $('#date').value) $('#dateTo').value = $('#date').value;
+  loadSchedule();
+});
+$('#movieList').addEventListener('click', (event) => {
+  const day = event.target.closest('[data-show-date]');
+  if (!day) return;
+  $('#date').value = day.dataset.showDate;
+  $('#dateTo').value = day.dataset.showDate;
+  $('#dateTo').min = day.dataset.showDate;
+  loadSchedule();
+});
 $('#refresh').addEventListener('click', refreshSelectedLocation);
 $('#refreshAll').addEventListener('click', refreshAllLocations);
 $('#historyFrom').addEventListener('change', loadHistory);
@@ -411,6 +473,7 @@ document.querySelectorAll('.tabs button').forEach((button) => button.addEventLis
 }));
 
 updateLocationHeading();
+$('#dateTo').min = $('#date').value;
 setComparisonRange('week');
 updateCronCountdown();
 setInterval(updateCronCountdown, 1000);

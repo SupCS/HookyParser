@@ -510,6 +510,69 @@ def schedule():
         return jsonify({"error": "Could not save the schedule", "detail": str(error)}), 500
 
 
+@app.get("/api/schedule-range")
+def schedule_range():
+    location = request.args.get("location", "hutto")
+    if location not in LOCATIONS:
+        return jsonify({"error": "Unknown location"}), 400
+    location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date()
+    date_from = request.args.get("date_from", location_today.isoformat())
+    date_to = request.args.get("date_to", date_from)
+    try:
+        start = datetime.strptime(date_from, "%Y-%m-%d").date()
+        end = datetime.strptime(date_to, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "Invalid date range"}), 400
+    if start > end:
+        return jsonify({"error": "From date must not be after To date"}), 400
+    days = (end - start).days + 1
+    if days > 366:
+        return jsonify({"error": "Date range cannot exceed 366 days"}), 400
+
+    with db() as connection:
+        rows = connection.execute(
+            sql("""SELECT r.show_date, r.captured_at, s.movie_slug, s.movie_title,
+                          s.show_time, s.checkout_url, s.id
+                   FROM scrape_runs r LEFT JOIN showings s ON s.run_id = r.id
+                   WHERE r.location=? AND r.show_date>=? AND r.show_date<=?
+                   ORDER BY s.movie_title, r.show_date, s.id"""),
+            (location, date_from, date_to),
+        ).fetchall()
+
+    grouped: dict[str, dict] = {}
+    captured_at = None
+    available_dates: set[str] = set()
+    for row in rows:
+        available_dates.add(row["show_date"])
+        if captured_at is None or row["captured_at"] > captured_at:
+            captured_at = row["captured_at"]
+        if not row["movie_title"]:
+            continue
+        movie = grouped.setdefault(row["movie_slug"], {
+            "slug": row["movie_slug"], "title": row["movie_title"], "dates": {}
+        })
+        movie["dates"].setdefault(row["show_date"], []).append({
+            "time": row["show_time"], "url": row["checkout_url"]
+        })
+    movies = []
+    for movie in grouped.values():
+        movie["dates"] = [
+            {"date": show_date, "showings": showings}
+            for show_date, showings in movie["dates"].items()
+        ]
+        movies.append(movie)
+    attach_cached_popularity(movies)
+    return jsonify({
+        "location": location,
+        "date_from": date_from,
+        "date_to": date_to,
+        "requested_days": days,
+        "available_days": len(available_dates),
+        "captured_at": captured_at,
+        "movies": movies,
+    })
+
+
 def collect_all_locations(locations=None):
     locations = locations or list(LOCATIONS)
     results = []

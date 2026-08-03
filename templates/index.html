@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='comparison.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='timeline.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='timeline-tooltip.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='schedule-range.css') }}">
 </head>
 <body>
   <main class="shell">
@@ -21,9 +22,10 @@
       <div class="hero-actions"><div class="auto-status"><i></i><span><b>Next collection</b><small id="nextRefresh">Calculating…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Refresh location <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Refresh all locations for the next 13 days" aria-label="Refresh all locations">All <span>↻</span></button></div></div>
     </header>
 
-    <section class="toolbar" aria-label="Filters">
+    <section class="toolbar schedule-toolbar" aria-label="Filters">
       <label><span>Location</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>
-      <label><span>Show date</span><div class="control date-control"><input id="date" type="date" value="{{ today }}"></div></label>
+      <label><span>From</span><div class="control date-control"><input id="date" type="date" value="{{ today }}"></div></label>
+      <label><span>To</span><div class="control date-control"><input id="dateTo" type="date" value="{{ today }}"></div><small class="schedule-range-help">Same date shows times · a range shows available days</small></label>
       <label class="search"><span>Search movies</span><div class="control search-control"><input id="search" type="search" placeholder="For example, Superman"></div></label>
     </section>
 
