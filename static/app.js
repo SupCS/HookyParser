@@ -338,7 +338,9 @@ async function loadReleaseTimeline() {
       const poster = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="undefined-poster">?</div>';
       const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>` : `<strong>${escapeHtml(item.title)}</strong>`;
       const date = item.release_date ? new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Release date unavailable';
-      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small><button class="imdb-override" type="button" data-undefined-index="${index}">Set IMDb link</button></div></article>`;
+      const override = item.reason === 'OMDb match unavailable'
+        ? `<button class="imdb-override" type="button" data-undefined-index="${index}">Set IMDb link</button>` : '';
+      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small>${override}</div></article>`;
     }).join('');
     if (!releases.length) {
       chart.innerHTML = `<div class="empty">${data.omdb_configured ? 'No ranked releases with confirmed OMDb dates were found in this window.' : 'OMDb lookup is disabled: start the server with OMDB_API_KEY to build the release timeline.'}</div>`;
