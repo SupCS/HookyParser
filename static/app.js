@@ -283,7 +283,7 @@ async function loadReleaseTimeline() {
     const releases = data.releases || [];
     const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
     const future = releases.filter((item) => item.release_date > data.today).length;
-    $('#timelineSummary').innerHTML = `<span>${releases.length} releases</span><span>${ranked.length} with IMDb rank</span><span>${future} upcoming</span>${data.baseline_excluded ? `<span title="Movies already present in the first-ever snapshot are not treated as new releases">${data.baseline_excluded} initial titles excluded</span>` : ''}`;
+    $('#timelineSummary').innerHTML = `<span>${releases.length} confirmed releases</span><span>${ranked.length} with IMDb rank</span><span>${future} upcoming</span><span>Dates from OMDb</span>`;
     if (!releases.length) {
       chart.innerHTML = '<div class="empty">No first appearances were recorded in this window.</div>';
       return;
@@ -310,16 +310,20 @@ async function loadReleaseTimeline() {
     const todayX = x(data.today);
     const todayLine = today >= start && today <= end
       ? `<line class="release-today" x1="${todayX}" y1="${top}" x2="${todayX}" y2="${height - bottom}"/><text class="release-axis-label" text-anchor="middle" x="${todayX}" y="${top - 13}">TODAY</text>` : '';
+    const placed = [];
     const points = releases.map((item, index) => {
-      const px = x(item.release_date), py = y(item.impact_score);
-      const radius = Math.min(12, 6 + Math.sqrt(item.location_count || 1));
-      const label = item.title.length > 24 ? `${item.title.slice(0, 22)}…` : item.title;
-      const anchor = px > width - 190 ? 'end' : 'start';
-      const labelX = px + (anchor === 'end' ? -9 : 9);
-      const labelY = py + (index % 2 ? 17 : -10);
+      let px = x(item.release_date);
+      const py = y(item.impact_score);
+      let offset = 0;
+      while (placed.some((point) => Math.abs(point.x - px) < 16 && Math.abs(point.y - py) < 16)) {
+        offset += 1;
+        px = x(item.release_date) + (offset % 2 ? 1 : -1) * Math.ceil(offset / 2) * 9;
+      }
+      placed.push({ x: px, y: py });
+      const radius = Math.min(10, 6 + Math.sqrt(item.location_count || 1) / 2);
       const classes = `release-dot${item.release_date > data.today ? ' future' : ''}${item.impact_score === null ? ' unknown' : ''}`;
       const tooltip = `${item.title} · ${item.release_date} · ${item.imdb_popularity ? `IMDb #${item.imdb_popularity}, impact ${item.impact_score}` : 'IMDb rank unavailable'}`;
-      return `<g><title>${escapeHtml(tooltip)}</title><line class="release-stem" x1="${px}" y1="${height - bottom}" x2="${px}" y2="${py}"/><circle class="${classes}" cx="${px}" cy="${py}" r="${radius}"/><text class="release-label" text-anchor="${anchor}" x="${labelX}" y="${labelY}">${escapeHtml(label)}</text></g>`;
+      return `<g><title>${escapeHtml(tooltip)}</title><line class="release-stem" x1="${px}" y1="${height - bottom}" x2="${px}" y2="${py}"/><circle class="${classes}" cx="${px}" cy="${py}" r="${radius}" data-release-index="${index}"/></g>`;
     }).join('');
     chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Movie release impact timeline">${grids}${monthTicks.join('')}${todayLine}${points}</svg>`;
     list.innerHTML = releases.map((item) => {

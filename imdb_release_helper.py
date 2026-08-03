@@ -23,11 +23,39 @@ class ImdbPopularity:
     title: str
     imdb_id: str
     rank: int | None
+    release_date: str | None
     fetched_at: str
 
 
 def normalize_title(title: str) -> str:
     return " ".join(title.casefold().split())
+
+
+def clean_release_title(title: str) -> tuple[str, int | None]:
+    """Remove cinema presentation labels while preserving an explicit year hint."""
+    value = " ".join(title.split())
+    year_match = re.search(r"\s*\(((?:19|20)\d{2})\)\s*$", value)
+    year = int(year_match.group(1)) if year_match else None
+    if year_match:
+        value = value[:year_match.start()].strip()
+    value = re.sub(r"^3D\s+", "", value, flags=re.I)
+    value = re.sub(
+        r"\s*\((?:Open Caption(?:ed)?|Closed Caption(?:ed)?|Spanish Dub(?:bed)?|English Dub(?:bed)?|Hindi|Tamil|Telugu)\)\s*$",
+        "",
+        value,
+        flags=re.I,
+    )
+    value = re.sub(r"\s+w/(?:Bonus Footage|Q&A).*$", "", value, flags=re.I)
+    return value.strip(), year
+
+
+def parse_omdb_release_date(value: Any) -> str | None:
+    if not value or value == "N/A":
+        return None
+    try:
+        return datetime.strptime(str(value), "%d %b %Y").date().isoformat()
+    except ValueError:
+        return None
 
 
 def parse_rank(value: Any) -> int | None:
@@ -56,7 +84,7 @@ def parse_imdb_popularity(html: str) -> int | None:
     return parse_rank(embedded.group(1)) if embedded else None
 
 
-def find_imdb_id(title: str, year: int | None = None, session=requests) -> tuple[str, str]:
+def find_imdb_movie(title: str, year: int | None = None, session=requests) -> dict[str, Any]:
     api_key = os.environ.get("OMDB_API_KEY")
     if not api_key:
         raise RuntimeError("OMDB_API_KEY is not configured")
@@ -71,7 +99,12 @@ def find_imdb_id(title: str, year: int | None = None, session=requests) -> tuple
     imdb_id = data.get("imdbID", "")
     if not re.fullmatch(r"tt\d+", imdb_id):
         raise ValueError("OMDb returned an invalid IMDb ID")
-    return imdb_id, data.get("Title") or title
+    return data
+
+
+def find_imdb_id(title: str, year: int | None = None, session=requests) -> tuple[str, str]:
+    data = find_imdb_movie(title, year, session)
+    return data["imdbID"], data.get("Title") or title
 
 
 def fetch_imdb_popularity(imdb_id: str, session=requests) -> int:
@@ -104,8 +137,16 @@ def fetch_imdb_popularity(imdb_id: str, session=requests) -> int:
 
 
 def lookup_movie(title: str, year: int | None = None, session=requests) -> ImdbPopularity:
-    imdb_id, matched_title = find_imdb_id(title, year, session)
-    return ImdbPopularity(matched_title, imdb_id, fetch_imdb_popularity(imdb_id, session), datetime.now(timezone.utc).isoformat())
+    cleaned_title, title_year = clean_release_title(title)
+    data = find_imdb_movie(cleaned_title, year or title_year, session)
+    imdb_id = data["imdbID"]
+    return ImdbPopularity(
+        data.get("Title") or cleaned_title,
+        imdb_id,
+        fetch_imdb_popularity(imdb_id, session),
+        parse_omdb_release_date(data.get("Released")),
+        datetime.now(timezone.utc).isoformat(),
+    )
 
 
 def main() -> int:
