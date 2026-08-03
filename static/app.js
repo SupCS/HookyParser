@@ -281,9 +281,10 @@ async function loadReleaseTimeline() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
     const releases = data.releases || [];
+    const undefinedReleases = data.undefined_releases || [];
     const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
     const future = releases.filter((item) => item.release_date > data.today).length;
-    $('#timelineSummary').innerHTML = `<span>${releases.length} confirmed releases</span><span>${ranked.length} with IMDb rank</span><span>${future} upcoming</span><span>Dates from OMDb</span>`;
+    $('#timelineSummary').innerHTML = `<span>${releases.length} ranked releases</span><span>${future} upcoming</span><span>${undefinedReleases.length} undefined</span><span>Dates from OMDb</span>`;
     if (!releases.length) {
       chart.innerHTML = '<div class="empty">No first appearances were recorded in this window.</div>';
       return;
@@ -323,14 +324,47 @@ async function loadReleaseTimeline() {
       const radius = Math.min(10, 6 + Math.sqrt(item.location_count || 1) / 2);
       const classes = `release-dot${item.release_date > data.today ? ' future' : ''}${item.impact_score === null ? ' unknown' : ''}`;
       const tooltip = `${item.title} · ${item.release_date} · ${item.imdb_popularity ? `IMDb #${item.imdb_popularity}, impact ${item.impact_score}` : 'IMDb rank unavailable'}`;
-      return `<g><title>${escapeHtml(tooltip)}</title><line class="release-stem" x1="${px}" y1="${height - bottom}" x2="${px}" y2="${py}"/><circle class="${classes}" cx="${px}" cy="${py}" r="${radius}" data-release-index="${index}"/></g>`;
+      return `<g><title>${escapeHtml(tooltip)}</title><line class="release-stem" x1="${px}" y1="${height - bottom}" x2="${px}" y2="${py}"/><a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer"><circle class="${classes}" cx="${px}" cy="${py}" r="${radius}" tabindex="0" data-release-index="${index}"/></a></g>`;
     }).join('');
-    chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Movie release impact timeline">${grids}${monthTicks.join('')}${todayLine}${points}</svg>`;
+    chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Movie release impact timeline">${grids}${monthTicks.join('')}${todayLine}${points}</svg><div class="release-tooltip" id="releaseTooltip" role="tooltip"></div>`;
+    const releaseTooltip = $('#releaseTooltip');
+    function showReleaseTooltip(circle) {
+      const item = releases[Number(circle.dataset.releaseIndex)];
+      const image = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="tooltip-poster-empty">No poster</div>';
+      const formattedDate = new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+      releaseTooltip.innerHTML = `${image}<div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(formattedDate)}</span><b>IMDb #${item.imdb_popularity.toLocaleString('en-US')} · Impact ${item.impact_score}</b><small>Click the point to open IMDb ↗</small></div>`;
+      releaseTooltip.classList.add('visible');
+      const pointRect = circle.getBoundingClientRect();
+      const chartRect = chart.getBoundingClientRect();
+      let tooltipLeft = pointRect.left - chartRect.left + chart.scrollLeft + pointRect.width / 2;
+      const pointTop = pointRect.top - chartRect.top + chart.scrollTop;
+      const openBelow = pointRect.top - chartRect.top < releaseTooltip.offsetHeight + 24;
+      releaseTooltip.classList.toggle('below', openBelow);
+      const tooltipTop = pointTop + (openBelow ? pointRect.height : -12);
+      const halfWidth = releaseTooltip.offsetWidth / 2;
+      tooltipLeft = Math.max(halfWidth + 8, Math.min(chart.scrollWidth - halfWidth - 8, tooltipLeft));
+      releaseTooltip.style.left = `${tooltipLeft}px`;
+      releaseTooltip.style.top = `${tooltipTop}px`;
+    }
+    chart.querySelectorAll('.release-dot').forEach((circle) => {
+      circle.addEventListener('pointerenter', () => showReleaseTooltip(circle));
+      circle.addEventListener('focus', () => showReleaseTooltip(circle));
+      circle.addEventListener('pointerleave', () => releaseTooltip.classList.remove('visible'));
+      circle.addEventListener('blur', () => releaseTooltip.classList.remove('visible'));
+    });
     list.innerHTML = releases.map((item) => {
       const [year, month, day] = item.release_date.split('-');
       const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer"><h3>${escapeHtml(item.title)}</h3></a>` : `<h3>${escapeHtml(item.title)}</h3>`;
       const rank = item.imdb_popularity ? `IMDb #${item.imdb_popularity.toLocaleString('en-US')}` : 'IMDb rank unavailable';
       return `<article class="release-item"><span class="release-date">${day}.${month}<br>${year}</span><div>${title}<p>${rank} · ${item.location_count} location${item.location_count === 1 ? '' : 's'} on first day</p></div><strong class="release-score">${item.impact_score ?? '—'}<small>impact</small></strong></article>`;
+    }).join('');
+    $('#undefinedSection').classList.toggle('hidden', !undefinedReleases.length);
+    $('#undefinedCount').textContent = `${undefinedReleases.length} movie${undefinedReleases.length === 1 ? '' : 's'}`;
+    $('#undefinedList').innerHTML = undefinedReleases.map((item) => {
+      const poster = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="undefined-poster">?</div>';
+      const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>` : `<strong>${escapeHtml(item.title)}</strong>`;
+      const date = item.release_date ? new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Release date unavailable';
+      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small></div></article>`;
     }).join('');
   } catch (error) {
     chart.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;

@@ -1,0 +1,26 @@
+.release-dot:hover,.release-dot:focus{stroke:var(--aid-lime);stroke-width:5;outline:none}
+.release-tooltip{position:absolute;z-index:10;display:grid;grid-template-columns:82px 1fr;width:300px;min-height:118px;border:1px solid var(--aid-line);border-radius:12px;background:#fff;box-shadow:0 16px 45px rgba(11,11,11,.2);overflow:hidden;opacity:0;pointer-events:none;transform:translate(-50%,-100%);transition:opacity .12s}
+.release-tooltip.visible{opacity:1}
+.release-tooltip.below{transform:translate(-50%,12px)}
+.release-tooltip img,.tooltip-poster-empty{width:82px;height:118px;object-fit:cover;background:var(--aid-bg-3)}
+.tooltip-poster-empty{display:grid;place-items:center;color:var(--aid-mute);font-size:10px}
+.release-tooltip>div:last-child{display:flex;flex-direction:column;align-items:flex-start;padding:13px}
+.release-tooltip strong{font-size:14px;line-height:1.25}
+.release-tooltip span{margin-top:6px;color:var(--aid-mute);font-size:11px}
+.release-tooltip b{margin-top:5px;color:var(--aid-blue);font-size:11px}
+.release-tooltip small{margin-top:auto;color:var(--aid-mute);font-size:9px}
+.undefined-releases{margin-top:34px;padding-top:26px;border-top:1px solid var(--aid-line)}
+.undefined-head{display:flex;align-items:end;justify-content:space-between;margin-bottom:14px}
+.undefined-head h3{margin:6px 0 0;font-size:26px}
+.undefined-head>span{color:var(--aid-mute);font-size:11px}
+.undefined-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.undefined-item{display:grid;grid-template-columns:48px 1fr;gap:12px;min-height:72px;padding:10px;border:1px solid var(--aid-line);border-radius:12px;background:#fff}
+.undefined-item img,.undefined-poster{width:48px;height:68px;border-radius:7px;object-fit:cover;background:var(--aid-bg-3)}
+.undefined-poster{display:grid;place-items:center;color:var(--aid-mute);font-weight:800}
+.undefined-item>div:last-child{display:flex;flex-direction:column;align-items:flex-start}
+.undefined-item a,.undefined-item strong{color:var(--aid-ink);font-size:12px;font-weight:700;text-decoration:none}
+.undefined-item a:hover{color:var(--aid-blue)}
+.undefined-item span{margin-top:5px;color:var(--aid-mute);font-size:10px}
+.undefined-item small{margin-top:auto;color:#a05a00;font-size:9px}
+@media(max-width:900px){.undefined-list{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.undefined-list{grid-template-columns:1fr}.release-tooltip{width:260px;grid-template-columns:72px 1fr}.release-tooltip img,.tooltip-poster-empty{width:72px}}

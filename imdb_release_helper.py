@@ -24,6 +24,7 @@ class ImdbPopularity:
     imdb_id: str
     rank: int | None
     release_date: str | None
+    poster_url: str | None
     fetched_at: str
 
 
@@ -52,6 +53,11 @@ def clean_release_title(title: str) -> tuple[str, int | None]:
 def parse_omdb_release_date(value: Any) -> str | None:
     if not value or value == "N/A":
         return None
+
+
+def parse_poster_url(value: Any) -> str | None:
+    poster = str(value or "")
+    return poster if poster.startswith(("https://", "http://")) else None
     try:
         return datetime.strptime(str(value), "%d %b %Y").date().isoformat()
     except ValueError:
@@ -145,6 +151,7 @@ def lookup_movie(title: str, year: int | None = None, session=requests) -> ImdbP
         imdb_id,
         fetch_imdb_popularity(imdb_id, session),
         parse_omdb_release_date(data.get("Released")),
+        parse_poster_url(data.get("Poster")),
         datetime.now(timezone.utc).isoformat(),
     )
 

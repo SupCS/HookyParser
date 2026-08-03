@@ -126,6 +126,8 @@ def init_db() -> None:
                 imdb_id TEXT NOT NULL,
                 imdb_popularity INTEGER,
                 release_date TEXT,
+                poster_url TEXT,
+                poster_checked INTEGER NOT NULL DEFAULT 0,
                 release_date_checked INTEGER NOT NULL DEFAULT 0,
                 fetched_at TEXT NOT NULL
             );
@@ -156,6 +158,12 @@ def init_db() -> None:
                 if "release_date_checked" not in popularity_columns:
                     connection.execute(
                         "ALTER TABLE movie_popularity ADD COLUMN release_date_checked INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "poster_url" not in popularity_columns:
+                    connection.execute("ALTER TABLE movie_popularity ADD COLUMN poster_url TEXT")
+                if "poster_checked" not in popularity_columns:
+                    connection.execute(
+                        "ALTER TABLE movie_popularity ADD COLUMN poster_checked INTEGER NOT NULL DEFAULT 0"
                     )
                 connection.execute(
                     """DELETE FROM scrape_runs
@@ -376,7 +384,8 @@ def update_movie_popularity(movies: list[dict]) -> None:
     now = datetime.now(timezone.utc)
     with db() as connection:
         rows = connection.execute(
-            "SELECT normalized_title, imdb_id, release_date, release_date_checked, fetched_at FROM movie_popularity"
+            """SELECT normalized_title, imdb_id, release_date, release_date_checked,
+                      poster_checked, fetched_at FROM movie_popularity"""
         ).fetchall()
     cached = {row["normalized_title"]: row for row in rows}
     due: dict[str, dict] = {}
@@ -390,7 +399,9 @@ def update_movie_popularity(movies: list[dict]) -> None:
                 if cached_row["imdb_id"]
                 else POPULARITY_ERROR_CACHE_MINUTES * 60
             )
-            cache_is_complete = bool(cached_row["release_date_checked"])
+            cache_is_complete = bool(
+                cached_row["release_date_checked"] and cached_row["poster_checked"]
+            )
             cache_is_recent_error = not cached_row["imdb_id"]
             if (cache_is_complete or cache_is_recent_error) and (now - fetched_at).total_seconds() < ttl:
                 continue
@@ -409,14 +420,16 @@ def update_movie_popularity(movies: list[dict]) -> None:
                 with db() as connection:
                     connection.execute(
                         sql("""INSERT INTO movie_popularity
-                            (normalized_title, movie_title, imdb_id, imdb_popularity, release_date, release_date_checked, fetched_at)
-                            VALUES (?, ?, ?, ?, ?, 1, ?)
+                            (normalized_title, movie_title, imdb_id, imdb_popularity, release_date, poster_url, poster_checked, release_date_checked, fetched_at)
+                            VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)
                             ON CONFLICT(normalized_title) DO UPDATE SET
                             movie_title=excluded.movie_title, imdb_id=excluded.imdb_id,
                             imdb_popularity=excluded.imdb_popularity, release_date=excluded.release_date,
+                            poster_url=excluded.poster_url,
+                            poster_checked=1,
                             release_date_checked=1,
                             fetched_at=excluded.fetched_at"""),
-                        (key, result.title, result.imdb_id, result.rank, result.release_date, result.fetched_at),
+                        (key, result.title, result.imdb_id, result.rank, result.release_date, result.poster_url, result.fetched_at),
                     )
                 logger.info(
                     "IMDb popularity updated for %s: #%s (%s)",
@@ -601,7 +614,7 @@ def release_timeline():
     with db() as connection:
         popularity_rows = connection.execute(
             """SELECT normalized_title, movie_title, imdb_id, imdb_popularity,
-                      release_date, release_date_checked
+                      release_date, poster_url, release_date_checked
                FROM movie_popularity"""
         ).fetchall()
 
@@ -618,11 +631,14 @@ def release_timeline():
             "release_date": imdb["release_date"],
             "imdb_id": imdb["imdb_id"],
             "imdb_popularity": imdb["imdb_popularity"],
+            "poster_url": imdb["poster_url"],
             "locations": set(),
         })
         item["locations"].add(row["location"])
         if item["imdb_popularity"] is None and imdb["imdb_popularity"] is not None:
             item["imdb_popularity"] = imdb["imdb_popularity"]
+        if not item["poster_url"] and imdb["poster_url"]:
+            item["poster_url"] = imdb["poster_url"]
 
     result = []
     for item in releases.values():
@@ -635,14 +651,40 @@ def release_timeline():
             "imdb_id": item["imdb_id"],
             "imdb_popularity": rank,
             "impact_score": popularity_impact(rank),
+            "poster_url": item["poster_url"],
             "location_count": len(item["locations"]),
         })
-    result.sort(key=lambda item: (item["release_date"], -(item["impact_score"] if item["impact_score"] is not None else -1), item["title"]))
+    ranked_ids = {item["imdb_id"] for item in result if item["imdb_popularity"] is not None}
+    undefined: dict[str, dict] = {}
+    for title in unique_titles:
+        imdb = popularity.get(normalize_title(title), {})
+        if imdb.get("imdb_id") in ranked_ids:
+            continue
+        if imdb.get("release_date") and not date_from <= imdb["release_date"] <= date_to:
+            continue
+        undefined_key = imdb.get("imdb_id") or normalize_title(title)
+        if imdb.get("imdb_id") and not imdb.get("release_date"):
+            reason = "Official release date unavailable"
+        elif imdb.get("imdb_id"):
+            reason = "IMDb rank unavailable"
+        else:
+            reason = "OMDb match unavailable"
+        undefined.setdefault(undefined_key, {
+            "title": imdb.get("movie_title") or title,
+            "release_date": imdb.get("release_date"),
+            "imdb_id": imdb.get("imdb_id") or None,
+            "poster_url": imdb.get("poster_url"),
+            "reason": reason,
+        })
+    result = [item for item in result if item["imdb_popularity"] is not None]
+    result.sort(key=lambda item: (item["release_date"], -item["impact_score"], item["title"]))
+    undefined_result = sorted(undefined.values(), key=lambda item: (item["release_date"] or "9999-99-99", item["title"]))
     return jsonify({
         "date_from": date_from,
         "date_to": date_to,
         "today": today.isoformat(),
         "releases": result,
+        "undefined_releases": undefined_result,
     })
 
 
