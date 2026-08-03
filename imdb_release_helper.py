@@ -37,10 +37,22 @@ def parse_rank(value: Any) -> int | None:
 
 
 def parse_imdb_popularity(html: str) -> int | None:
-    score = re.search(r'data-testid=["\']hero-rating-bar__popularity__score["\'][^>]*>\s*([\d,.\s]+)\s*<', html, re.I)
+    score = re.search(
+        r'<div\b[^>]*data-testid=["\']hero-rating-bar__popularity__score["\'][^>]*>\s*([\d][\d,.\s]*)\s*</div>',
+        html,
+        re.I,
+    )
     if score:
         return parse_rank(score.group(1))
-    embedded = re.search(r'["\']meterRank["\']\s*:\s*(\d+)', html, re.I)
+    # Current IMDb pages embed the same GraphQL shape used by the live API:
+    # "meterRank":{"currentRank":465,...}. Keep the old flat form too.
+    embedded = re.search(
+        r'["\']meterRank["\']\s*:\s*\{[^{}]{0,500}?["\']currentRank["\']\s*:\s*(\d+)',
+        html,
+        re.I,
+    )
+    if not embedded:
+        embedded = re.search(r'["\']meterRank["\']\s*:\s*(\d+)', html, re.I)
     return parse_rank(embedded.group(1)) if embedded else None
 
 
@@ -64,20 +76,24 @@ def find_imdb_id(title: str, year: int | None = None, session=requests) -> tuple
 
 def fetch_imdb_popularity(imdb_id: str, session=requests) -> int:
     query = "query Popularity($id: ID!) { title(id: $id) { id meterRank { currentRank } } }"
-    headers = {"Accept": "application/json", "Accept-Language": "en-US,en;q=0.9", "Origin": "https://www.imdb.com", "Referer": "https://www.imdb.com/", "User-Agent": USER_AGENT, "X-Imdb-Client-Name": "imdb-web-next-localized"}
+    headers = {"Accept": "application/json", "Content-Type": "application/json", "Accept-Language": "en-US,en;q=0.9", "Origin": "https://www.imdb.com", "Referer": "https://www.imdb.com/", "User-Agent": USER_AGENT, "X-Imdb-Client-Name": "imdb-web-next-localized"}
+    graphql_error = "no currentRank in the response"
     try:
         response = session.get(IMDB_GRAPHQL_URL, params={"query": query, "variables": json.dumps({"id": imdb_id})}, headers=headers, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         rank = (((response.json().get("data") or {}).get("title") or {}).get("meterRank") or {}).get("currentRank")
         if isinstance(rank, int) and rank > 0:
             return rank
-    except (requests.RequestException, ValueError, TypeError):
-        pass
+        errors = response.json().get("errors") or []
+        if errors:
+            graphql_error = errors[0].get("message", graphql_error)
+    except (requests.RequestException, ValueError, TypeError) as error:
+        graphql_error = str(error)
     response = session.get(f"{IMDB_TITLE_URL}{imdb_id}/", headers={"Accept": "text/html", "Accept-Language": "en-US,en;q=0.9", "User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     rank = parse_imdb_popularity(response.text)
     if rank is None:
-        raise ValueError("IMDb Popularity was not found")
+        raise ValueError(f"IMDb Popularity was not found (GraphQL: {graphql_error})")
     return rank
 
 
