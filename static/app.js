@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { movies: [], loading: false, rangeView: false };
+const state = { movies: [], loading: false, rangeView: false, undefinedReleases: [] };
 
 function escapeHtml(value) {
   const node = document.createElement('span');
@@ -328,16 +328,17 @@ async function loadReleaseTimeline() {
     if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
     const releases = data.releases || [];
     const undefinedReleases = data.undefined_releases || [];
+    state.undefinedReleases = undefinedReleases;
     const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
     const future = releases.filter((item) => item.release_date > data.today).length;
     $('#timelineSummary').innerHTML = `<span>${releases.length} ranked releases</span><span>${future} upcoming</span><span>${undefinedReleases.length} undefined</span><span>Dates from OMDb</span>`;
     $('#undefinedSection').classList.toggle('hidden', !undefinedReleases.length);
     $('#undefinedCount').textContent = `${undefinedReleases.length} movie${undefinedReleases.length === 1 ? '' : 's'}`;
-    $('#undefinedList').innerHTML = undefinedReleases.map((item) => {
+    $('#undefinedList').innerHTML = undefinedReleases.map((item, index) => {
       const poster = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="undefined-poster">?</div>';
       const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>` : `<strong>${escapeHtml(item.title)}</strong>`;
       const date = item.release_date ? new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Release date unavailable';
-      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small></div></article>`;
+      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small><button class="imdb-override" type="button" data-undefined-index="${index}">Set IMDb link</button></div></article>`;
     }).join('');
     if (!releases.length) {
       chart.innerHTML = `<div class="empty">${data.omdb_configured ? 'No ranked releases with confirmed OMDb dates were found in this window.' : 'OMDb lookup is disabled: start the server with OMDB_API_KEY to build the release timeline.'}</div>`;
@@ -436,6 +437,39 @@ $('#movieList').addEventListener('click', (event) => {
   $('#dateTo').value = day.dataset.showDate;
   $('#dateTo').min = day.dataset.showDate;
   loadSchedule();
+});
+$('#undefinedList').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-undefined-index]');
+  if (!button) return;
+  const item = state.undefinedReleases[Number(button.dataset.undefinedIndex)];
+  const imdb = window.prompt(`Enter the exact IMDb title, IMDb URL, or tt ID for “${item.title}”:`);
+  if (!imdb) return;
+  button.disabled = true;
+  button.textContent = 'Checking…';
+  async function submit(editorKey) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (editorKey) headers['X-Collector-Key'] = editorKey;
+    return fetch('/api/releases/imdb-override', {
+      method: 'POST', headers, body: JSON.stringify({ title: item.title, imdb }),
+    });
+  }
+  try {
+    let editorKey = sessionStorage.getItem('hookyEditorKey') || '';
+    let response = await submit(editorKey);
+    if (response.status === 401) {
+      editorKey = window.prompt('Enter the collector/editor key:') || '';
+      if (!editorKey) throw new Error('Editor key is required');
+      response = await submit(editorKey);
+      if (response.ok) sessionStorage.setItem('hookyEditorKey', editorKey);
+    }
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not save IMDb link');
+    await loadReleaseTimeline();
+  } catch (error) {
+    window.alert(error.message);
+    button.disabled = false;
+    button.textContent = 'Set IMDb link';
+  }
 });
 $('#refresh').addEventListener('click', refreshSelectedLocation);
 $('#refreshAll').addEventListener('click', refreshAllLocations);

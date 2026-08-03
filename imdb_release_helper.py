@@ -143,22 +143,83 @@ def fetch_imdb_popularity(imdb_id: str, session=requests) -> int:
     return rank
 
 
+def fetch_imdb_metadata(imdb_id: str, session=requests) -> dict[str, Any]:
+    query = """query TitleMetadata($id: ID!) {
+      title(id: $id) {
+        id titleText { text } releaseDate { day month year }
+        primaryImage { url } meterRank { currentRank }
+      }
+    }"""
+    response = session.post(
+        IMDB_GRAPHQL_URL,
+        json={"query": query, "variables": {"id": imdb_id}},
+        headers={
+            "Accept": "application/json", "Content-Type": "application/json",
+            "Accept-Language": "en-US,en;q=0.9", "Origin": "https://www.imdb.com",
+            "Referer": "https://www.imdb.com/", "User-Agent": USER_AGENT,
+            "X-Imdb-Client-Name": "imdb-web-next-localized",
+        },
+        timeout=REQUEST_TIMEOUT,
+    )
+    payload = response.json()
+    response.raise_for_status()
+    title = (payload.get("data") or {}).get("title") or {}
+    if not title:
+        errors = payload.get("errors") or []
+        raise ValueError(errors[0].get("message", "IMDb title was not found") if errors else "IMDb title was not found")
+    date = title.get("releaseDate") or {}
+    try:
+        release_date = datetime(int(date["year"]), int(date["month"]), int(date["day"])).date().isoformat()
+    except (KeyError, TypeError, ValueError):
+        release_date = None
+    return {
+        "title": (title.get("titleText") or {}).get("text"),
+        "release_date": release_date,
+        "poster_url": parse_poster_url((title.get("primaryImage") or {}).get("url")),
+        "rank": (title.get("meterRank") or {}).get("currentRank"),
+    }
+
+
+def lookup_imdb_id(imdb_id: str, fallback_title: str = "", session=requests) -> ImdbPopularity:
+    if not re.fullmatch(r"tt\d+", imdb_id):
+        raise ValueError("Invalid IMDb ID")
+    metadata = fetch_imdb_metadata(imdb_id, session)
+    rank = metadata["rank"] if isinstance(metadata["rank"], int) and metadata["rank"] > 0 else None
+    return ImdbPopularity(
+        metadata["title"] or fallback_title or imdb_id,
+        imdb_id,
+        rank,
+        metadata["release_date"],
+        metadata["poster_url"],
+        datetime.now(timezone.utc).isoformat(),
+        None if rank else "IMDb Popularity was not found",
+    )
+
+
 def lookup_movie(title: str, year: int | None = None, session=requests) -> ImdbPopularity:
     cleaned_title, title_year = clean_release_title(title)
     data = find_imdb_movie(cleaned_title, year or title_year, session)
     imdb_id = data["imdbID"]
     popularity_error = None
+    metadata: dict[str, Any] = {}
     try:
-        rank = fetch_imdb_popularity(imdb_id, session)
+        metadata = fetch_imdb_metadata(imdb_id, session)
+        rank = metadata["rank"] if isinstance(metadata["rank"], int) and metadata["rank"] > 0 else None
     except Exception as error:
         rank = None
         popularity_error = str(error)
+    if rank is None:
+        try:
+            rank = fetch_imdb_popularity(imdb_id, session)
+            popularity_error = None
+        except Exception as error:
+            popularity_error = str(error)
     return ImdbPopularity(
-        data.get("Title") or cleaned_title,
+        metadata.get("title") or data.get("Title") or cleaned_title,
         imdb_id,
         rank,
-        parse_omdb_release_date(data.get("Released")),
-        parse_poster_url(data.get("Poster")),
+        parse_omdb_release_date(data.get("Released")) or metadata.get("release_date"),
+        parse_poster_url(data.get("Poster")) or metadata.get("poster_url"),
         datetime.now(timezone.utc).isoformat(),
         popularity_error,
     )

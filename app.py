@@ -17,7 +17,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 from flask import Flask, jsonify, render_template, request
 
-from imdb_release_helper import lookup_movie, normalize_title
+from imdb_release_helper import lookup_imdb_id, lookup_movie, normalize_title
 
 psycopg: Any
 dict_row: Any
@@ -129,6 +129,7 @@ def init_db() -> None:
                 poster_url TEXT,
                 poster_checked INTEGER NOT NULL DEFAULT 0,
                 release_date_checked INTEGER NOT NULL DEFAULT 0,
+                manual_override INTEGER NOT NULL DEFAULT 0,
                 fetched_at TEXT NOT NULL
             );
             """.format(primary_key="BIGSERIAL PRIMARY KEY" if DATABASE_URL else "INTEGER PRIMARY KEY")
@@ -164,6 +165,10 @@ def init_db() -> None:
                 if "poster_checked" not in popularity_columns:
                     connection.execute(
                         "ALTER TABLE movie_popularity ADD COLUMN poster_checked INTEGER NOT NULL DEFAULT 0"
+                    )
+                if "manual_override" not in popularity_columns:
+                    connection.execute(
+                        "ALTER TABLE movie_popularity ADD COLUMN manual_override INTEGER NOT NULL DEFAULT 0"
                     )
                 connection.execute(
                     """DELETE FROM scrape_runs
@@ -385,7 +390,7 @@ def update_movie_popularity(movies: list[dict]) -> None:
     with db() as connection:
         rows = connection.execute(
             """SELECT normalized_title, imdb_id, release_date, release_date_checked,
-                      poster_checked, fetched_at FROM movie_popularity"""
+                      poster_checked, manual_override, fetched_at FROM movie_popularity"""
         ).fetchall()
     cached = {row["normalized_title"]: row for row in rows}
     due: dict[str, dict] = {}
@@ -414,7 +419,14 @@ def update_movie_popularity(movies: list[dict]) -> None:
 
     logger.info("IMDb popularity lookup started for %d movie(s)", len(due))
     with ThreadPoolExecutor(max_workers=min(4, len(due))) as executor:
-        futures = {executor.submit(lookup_movie, movie["title"]): (key, movie) for key, movie in due.items()}
+        futures = {}
+        for key, movie in due.items():
+            cached_row = cached.get(key)
+            if cached_row and cached_row["manual_override"] and cached_row["imdb_id"]:
+                future = executor.submit(lookup_imdb_id, cached_row["imdb_id"], movie["title"])
+            else:
+                future = executor.submit(lookup_movie, movie["title"])
+            futures[future] = (key, movie)
         for future in as_completed(futures):
             key, movie = futures[future]
             try:
@@ -658,6 +670,44 @@ def popularity_impact(rank: int | None) -> int | None:
     if not rank or rank <= 0:
         return None
     return round(max(0, min(100, 100 - 25 * math.log10(rank))))
+
+
+def parse_imdb_reference(value: str) -> str | None:
+    match = re.search(r"(?:imdb\.com/title/)?(tt\d+)", value or "", re.IGNORECASE)
+    return match.group(1).lower() if match else None
+
+
+@app.post("/api/releases/imdb-override")
+def set_imdb_override():
+    collector_key = os.environ.get("COLLECTOR_KEY")
+    if collector_key and request.headers.get("X-Collector-Key") != collector_key:
+        return jsonify({"error": "Editor key required"}), 401
+    payload = request.get_json(silent=True) or {}
+    original_title = " ".join(str(payload.get("title") or "").split())
+    imdb_value = " ".join(str(payload.get("imdb") or "").split())
+    imdb_id = parse_imdb_reference(imdb_value)
+    if not original_title or not imdb_value:
+        return jsonify({"error": "Movie title and an IMDb title, URL, or tt ID are required"}), 400
+    try:
+        result = lookup_imdb_id(imdb_id, original_title) if imdb_id else lookup_movie(imdb_value)
+    except Exception as error:
+        return jsonify({"error": str(error)}), 400
+    key = normalize_title(original_title)
+    with db() as connection:
+        connection.execute(
+            sql("""INSERT INTO movie_popularity
+                (normalized_title, movie_title, imdb_id, imdb_popularity, release_date,
+                 poster_url, poster_checked, release_date_checked, manual_override, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, 2, 1, ?)
+                ON CONFLICT(normalized_title) DO UPDATE SET
+                movie_title=excluded.movie_title, imdb_id=excluded.imdb_id,
+                imdb_popularity=excluded.imdb_popularity, release_date=excluded.release_date,
+                poster_url=excluded.poster_url, poster_checked=1,
+                release_date_checked=2, manual_override=1, fetched_at=excluded.fetched_at"""),
+            (key, result.title, result.imdb_id, result.rank, result.release_date,
+             result.poster_url, result.fetched_at),
+        )
+    return jsonify({"status": "ok", "title": result.title, "imdb_id": result.imdb_id})
 
 
 @app.get("/api/releases")

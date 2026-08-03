@@ -22,5 +22,6 @@
 .undefined-item a:hover{color:var(--aid-blue)}
 .undefined-item span{margin-top:5px;color:var(--aid-mute);font-size:10px}
 .undefined-item small{margin-top:auto;color:#a05a00;font-size:9px}
+.imdb-override{margin-top:7px;padding:5px 8px;border:1px solid var(--aid-line);border-radius:999px;background:#fff;color:var(--aid-blue);font:700 8px Inter,sans-serif;text-transform:uppercase;cursor:pointer}.imdb-override:hover{border-color:var(--aid-blue);background:var(--aid-blue);color:#fff}.imdb-override:disabled{opacity:.55;cursor:wait}
 @media(max-width:900px){.undefined-list{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:600px){.undefined-list{grid-template-columns:1fr}.release-tooltip{width:260px;grid-template-columns:72px 1fr}.release-tooltip img,.tooltip-poster-empty{width:72px}}
