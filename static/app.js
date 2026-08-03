@@ -285,8 +285,16 @@ async function loadReleaseTimeline() {
     const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
     const future = releases.filter((item) => item.release_date > data.today).length;
     $('#timelineSummary').innerHTML = `<span>${releases.length} ranked releases</span><span>${future} upcoming</span><span>${undefinedReleases.length} undefined</span><span>Dates from OMDb</span>`;
+    $('#undefinedSection').classList.toggle('hidden', !undefinedReleases.length);
+    $('#undefinedCount').textContent = `${undefinedReleases.length} movie${undefinedReleases.length === 1 ? '' : 's'}`;
+    $('#undefinedList').innerHTML = undefinedReleases.map((item) => {
+      const poster = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="undefined-poster">?</div>';
+      const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>` : `<strong>${escapeHtml(item.title)}</strong>`;
+      const date = item.release_date ? new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Release date unavailable';
+      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small></div></article>`;
+    }).join('');
     if (!releases.length) {
-      chart.innerHTML = '<div class="empty">No first appearances were recorded in this window.</div>';
+      chart.innerHTML = `<div class="empty">${data.omdb_configured ? 'No ranked releases with confirmed OMDb dates were found in this window.' : 'OMDb lookup is disabled: start the server with OMDB_API_KEY to build the release timeline.'}</div>`;
       return;
     }
 
@@ -357,14 +365,6 @@ async function loadReleaseTimeline() {
       const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer"><h3>${escapeHtml(item.title)}</h3></a>` : `<h3>${escapeHtml(item.title)}</h3>`;
       const rank = item.imdb_popularity ? `IMDb #${item.imdb_popularity.toLocaleString('en-US')}` : 'IMDb rank unavailable';
       return `<article class="release-item"><span class="release-date">${day}.${month}<br>${year}</span><div>${title}<p>${rank} · ${item.location_count} location${item.location_count === 1 ? '' : 's'} on first day</p></div><strong class="release-score">${item.impact_score ?? '—'}<small>impact</small></strong></article>`;
-    }).join('');
-    $('#undefinedSection').classList.toggle('hidden', !undefinedReleases.length);
-    $('#undefinedCount').textContent = `${undefinedReleases.length} movie${undefinedReleases.length === 1 ? '' : 's'}`;
-    $('#undefinedList').innerHTML = undefinedReleases.map((item) => {
-      const poster = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="undefined-poster">?</div>';
-      const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>` : `<strong>${escapeHtml(item.title)}</strong>`;
-      const date = item.release_date ? new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Release date unavailable';
-      return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small></div></article>`;
     }).join('');
   } catch (error) {
     chart.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;

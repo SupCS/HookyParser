@@ -399,8 +399,10 @@ def update_movie_popularity(movies: list[dict]) -> None:
                 if cached_row["imdb_id"]
                 else POPULARITY_ERROR_CACHE_MINUTES * 60
             )
+            # Version 1 was written by a broken release-date parser. Version 2
+            # guarantees that OMDb's Released field was actually parsed.
             cache_is_complete = bool(
-                cached_row["release_date_checked"] and cached_row["poster_checked"]
+                cached_row["release_date_checked"] >= 2 and cached_row["poster_checked"]
             )
             cache_is_recent_error = not cached_row["imdb_id"]
             if (cache_is_complete or cache_is_recent_error) and (now - fetched_at).total_seconds() < ttl:
@@ -421,20 +423,27 @@ def update_movie_popularity(movies: list[dict]) -> None:
                     connection.execute(
                         sql("""INSERT INTO movie_popularity
                             (normalized_title, movie_title, imdb_id, imdb_popularity, release_date, poster_url, poster_checked, release_date_checked, fetched_at)
-                            VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, 1, 2, ?)
                             ON CONFLICT(normalized_title) DO UPDATE SET
                             movie_title=excluded.movie_title, imdb_id=excluded.imdb_id,
-                            imdb_popularity=excluded.imdb_popularity, release_date=excluded.release_date,
-                            poster_url=excluded.poster_url,
+                            imdb_popularity=COALESCE(excluded.imdb_popularity, movie_popularity.imdb_popularity),
+                            release_date=COALESCE(excluded.release_date, movie_popularity.release_date),
+                            poster_url=COALESCE(excluded.poster_url, movie_popularity.poster_url),
                             poster_checked=1,
-                            release_date_checked=1,
+                            release_date_checked=2,
                             fetched_at=excluded.fetched_at"""),
                         (key, result.title, result.imdb_id, result.rank, result.release_date, result.poster_url, result.fetched_at),
                     )
-                logger.info(
-                    "IMDb popularity updated for %s: #%s (%s)",
-                    movie["title"], result.rank, result.imdb_id,
-                )
+                if result.popularity_error:
+                    logger.warning(
+                        "IMDb metadata saved for %s, but popularity is unavailable: %s",
+                        movie["title"], result.popularity_error,
+                    )
+                else:
+                    logger.info(
+                        "IMDb popularity updated for %s: #%s (%s)",
+                        movie["title"], result.rank, result.imdb_id,
+                    )
             except Exception as error:
                 logger.warning("IMDb popularity lookup failed for %s: %s", movie["title"], error)
                 failed_at = datetime.now(timezone.utc).isoformat()
@@ -683,6 +692,7 @@ def release_timeline():
         "date_from": date_from,
         "date_to": date_to,
         "today": today.isoformat(),
+        "omdb_configured": bool(os.environ.get("OMDB_API_KEY")),
         "releases": result,
         "undefined_releases": undefined_result,
     })

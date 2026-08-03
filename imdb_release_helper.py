@@ -26,6 +26,7 @@ class ImdbPopularity:
     release_date: str | None
     poster_url: str | None
     fetched_at: str
+    popularity_error: str | None = None
 
 
 def normalize_title(title: str) -> str:
@@ -53,15 +54,15 @@ def clean_release_title(title: str) -> tuple[str, int | None]:
 def parse_omdb_release_date(value: Any) -> str | None:
     if not value or value == "N/A":
         return None
+    try:
+        return datetime.strptime(str(value), "%d %b %Y").date().isoformat()
+    except ValueError:
+        return None
 
 
 def parse_poster_url(value: Any) -> str | None:
     poster = str(value or "")
     return poster if poster.startswith(("https://", "http://")) else None
-    try:
-        return datetime.strptime(str(value), "%d %b %Y").date().isoformat()
-    except ValueError:
-        return None
 
 
 def parse_rank(value: Any) -> int | None:
@@ -146,13 +147,20 @@ def lookup_movie(title: str, year: int | None = None, session=requests) -> ImdbP
     cleaned_title, title_year = clean_release_title(title)
     data = find_imdb_movie(cleaned_title, year or title_year, session)
     imdb_id = data["imdbID"]
+    popularity_error = None
+    try:
+        rank = fetch_imdb_popularity(imdb_id, session)
+    except Exception as error:
+        rank = None
+        popularity_error = str(error)
     return ImdbPopularity(
         data.get("Title") or cleaned_title,
         imdb_id,
-        fetch_imdb_popularity(imdb_id, session),
+        rank,
         parse_omdb_release_date(data.get("Released")),
         parse_poster_url(data.get("Poster")),
         datetime.now(timezone.utc).isoformat(),
+        popularity_error,
     )
 
 
