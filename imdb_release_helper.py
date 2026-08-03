@@ -79,12 +79,18 @@ def fetch_imdb_popularity(imdb_id: str, session=requests) -> int:
     headers = {"Accept": "application/json", "Content-Type": "application/json", "Accept-Language": "en-US,en;q=0.9", "Origin": "https://www.imdb.com", "Referer": "https://www.imdb.com/", "User-Agent": USER_AGENT, "X-Imdb-Client-Name": "imdb-web-next-localized"}
     graphql_error = "no currentRank in the response"
     try:
-        response = session.get(IMDB_GRAPHQL_URL, params={"query": query, "variables": json.dumps({"id": imdb_id})}, headers=headers, timeout=REQUEST_TIMEOUT)
+        response = session.post(
+            IMDB_GRAPHQL_URL,
+            json={"query": query, "variables": {"id": imdb_id}},
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        payload = response.json()
         response.raise_for_status()
-        rank = (((response.json().get("data") or {}).get("title") or {}).get("meterRank") or {}).get("currentRank")
+        rank = (((payload.get("data") or {}).get("title") or {}).get("meterRank") or {}).get("currentRank")
         if isinstance(rank, int) and rank > 0:
             return rank
-        errors = response.json().get("errors") or []
+        errors = payload.get("errors") or []
         if errors:
             graphql_error = errors[0].get("message", graphql_error)
     except (requests.RequestException, ValueError, TypeError) as error:
