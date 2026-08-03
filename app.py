@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -542,6 +543,82 @@ def history():
         item["movies"] = details.get(row["id"], [])
         result.append(item)
     return jsonify(result)
+
+
+def popularity_impact(rank: int | None) -> int | None:
+    """Map IMDb's inverse rank to a readable 0–100 logarithmic impact score."""
+    if not rank or rank <= 0:
+        return None
+    return round(max(0, min(100, 100 - 25 * math.log10(rank))))
+
+
+@app.get("/api/releases")
+def release_timeline():
+    today = datetime.now(timezone.utc).date()
+    date_from = request.args.get("date_from", (today - timedelta(days=90)).isoformat())
+    date_to = request.args.get("date_to", (today + timedelta(days=31)).isoformat())
+    try:
+        start = datetime.strptime(date_from, "%Y-%m-%d").date()
+        end = datetime.strptime(date_to, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "Invalid date range"}), 400
+    if start > end:
+        return jsonify({"error": "date_from must not be after date_to"}), 400
+
+    with db() as connection:
+        rows = connection.execute(
+            """SELECT DISTINCT r.show_date, r.location, s.movie_title
+               FROM scrape_runs r JOIN showings s ON s.run_id = r.id
+               ORDER BY r.show_date, s.movie_title"""
+        ).fetchall()
+        popularity_rows = connection.execute(
+            "SELECT normalized_title, imdb_id, imdb_popularity FROM movie_popularity"
+        ).fetchall()
+
+    popularity = {row["normalized_title"]: dict(row) for row in popularity_rows}
+    releases: dict[str, dict] = {}
+    for row in rows:
+        key = normalize_title(row["movie_title"])
+        item = releases.setdefault(key, {
+            "title": row["movie_title"],
+            "release_date": row["show_date"],
+            "locations": set(),
+        })
+        if row["show_date"] < item["release_date"]:
+            item["release_date"] = row["show_date"]
+            item["locations"] = set()
+        if row["show_date"] == item["release_date"]:
+            item["locations"].add(row["location"])
+
+    result = []
+    first_recorded_date = min((item["release_date"] for item in releases.values()), default=None)
+    baseline_excluded = 0
+    for key, item in releases.items():
+        # Movies present on the database's very first day were already playing;
+        # their real first appearance is unknown, so do not label them releases.
+        if item["release_date"] == first_recorded_date:
+            baseline_excluded += 1
+            continue
+        if not date_from <= item["release_date"] <= date_to:
+            continue
+        imdb = popularity.get(key, {})
+        rank = imdb.get("imdb_popularity")
+        result.append({
+            "title": item["title"],
+            "release_date": item["release_date"],
+            "imdb_id": imdb.get("imdb_id") or None,
+            "imdb_popularity": rank,
+            "impact_score": popularity_impact(rank),
+            "location_count": len(item["locations"]),
+        })
+    result.sort(key=lambda item: (item["release_date"], -(item["impact_score"] or -1), item["title"]))
+    return jsonify({
+        "date_from": date_from,
+        "date_to": date_to,
+        "today": today.isoformat(),
+        "baseline_excluded": baseline_excluded,
+        "releases": result,
+    })
 
 
 @app.get("/api/compare")

@@ -271,6 +271,69 @@ async function loadComparison() {
   }
 }
 
+async function loadReleaseTimeline() {
+  const chart = $('#releaseChart');
+  const list = $('#releaseList');
+  chart.innerHTML = '<div class="empty">Building release timeline…</div>';
+  list.innerHTML = '';
+  try {
+    const response = await fetch('/api/releases');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
+    const releases = data.releases || [];
+    const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
+    const future = releases.filter((item) => item.release_date > data.today).length;
+    $('#timelineSummary').innerHTML = `<span>${releases.length} releases</span><span>${ranked.length} with IMDb rank</span><span>${future} upcoming</span>${data.baseline_excluded ? `<span title="Movies already present in the first-ever snapshot are not treated as new releases">${data.baseline_excluded} initial titles excluded</span>` : ''}`;
+    if (!releases.length) {
+      chart.innerHTML = '<div class="empty">No first appearances were recorded in this window.</div>';
+      return;
+    }
+
+    const width = 1100, height = 410, left = 58, right = 30, top = 48, bottom = 46;
+    const start = new Date(`${data.date_from}T00:00:00Z`);
+    const end = new Date(`${data.date_to}T00:00:00Z`);
+    const today = new Date(`${data.today}T00:00:00Z`);
+    const duration = Math.max(1, end - start);
+    const x = (date) => left + (new Date(`${date}T00:00:00Z`) - start) / duration * (width - left - right);
+    const y = (score) => top + (100 - (score ?? 3)) / 100 * (height - top - bottom);
+    const grids = [0, 25, 50, 75, 100].map((score) => {
+      const py = y(score);
+      return `<line class="release-grid" x1="${left}" y1="${py}" x2="${width - right}" y2="${py}"/><text class="release-axis-label" x="4" y="${py + 4}">${score}</text>`;
+    }).join('');
+    const monthTicks = [];
+    const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+    while (cursor <= end) {
+      const px = left + (cursor - start) / duration * (width - left - right);
+      monthTicks.push(`<line class="release-grid" x1="${px}" y1="${top}" x2="${px}" y2="${height - bottom}"/><text class="release-axis-label" text-anchor="middle" x="${px}" y="${height - 14}">${cursor.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })}</text>`);
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    const todayX = x(data.today);
+    const todayLine = today >= start && today <= end
+      ? `<line class="release-today" x1="${todayX}" y1="${top}" x2="${todayX}" y2="${height - bottom}"/><text class="release-axis-label" text-anchor="middle" x="${todayX}" y="${top - 13}">TODAY</text>` : '';
+    const points = releases.map((item, index) => {
+      const px = x(item.release_date), py = y(item.impact_score);
+      const radius = Math.min(12, 6 + Math.sqrt(item.location_count || 1));
+      const label = item.title.length > 24 ? `${item.title.slice(0, 22)}…` : item.title;
+      const anchor = px > width - 190 ? 'end' : 'start';
+      const labelX = px + (anchor === 'end' ? -9 : 9);
+      const labelY = py + (index % 2 ? 17 : -10);
+      const classes = `release-dot${item.release_date > data.today ? ' future' : ''}${item.impact_score === null ? ' unknown' : ''}`;
+      const tooltip = `${item.title} · ${item.release_date} · ${item.imdb_popularity ? `IMDb #${item.imdb_popularity}, impact ${item.impact_score}` : 'IMDb rank unavailable'}`;
+      return `<g><title>${escapeHtml(tooltip)}</title><line class="release-stem" x1="${px}" y1="${height - bottom}" x2="${px}" y2="${py}"/><circle class="${classes}" cx="${px}" cy="${py}" r="${radius}"/><text class="release-label" text-anchor="${anchor}" x="${labelX}" y="${labelY}">${escapeHtml(label)}</text></g>`;
+    }).join('');
+    chart.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Movie release impact timeline">${grids}${monthTicks.join('')}${todayLine}${points}</svg>`;
+    list.innerHTML = releases.map((item) => {
+      const [year, month, day] = item.release_date.split('-');
+      const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer"><h3>${escapeHtml(item.title)}</h3></a>` : `<h3>${escapeHtml(item.title)}</h3>`;
+      const rank = item.imdb_popularity ? `IMDb #${item.imdb_popularity.toLocaleString('en-US')}` : 'IMDb rank unavailable';
+      return `<article class="release-item"><span class="release-date">${day}.${month}<br>${year}</span><div>${title}<p>${rank} · ${item.location_count} location${item.location_count === 1 ? '' : 's'} on first day</p></div><strong class="release-score">${item.impact_score ?? '—'}<small>impact</small></strong></article>`;
+    }).join('');
+  } catch (error) {
+    chart.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    $('#timelineSummary').innerHTML = '';
+  }
+}
+
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
 $('#date').addEventListener('change', () => loadSchedule());
@@ -294,11 +357,15 @@ $('#compareApply').addEventListener('click', () => {
 document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach((item) => item.classList.toggle('active', item === button));
   document.querySelectorAll('.panel').forEach((panel) => panel.classList.toggle('hidden', panel.id !== button.dataset.tab));
-  document.body.classList.toggle('compare-mode', button.dataset.tab === 'comparison');
+  document.body.classList.toggle('compare-mode', ['comparison', 'timeline'].includes(button.dataset.tab));
   if (button.dataset.tab === 'comparison') {
     $('#heroLocation').textContent = 'All Locations';
     document.title = 'Hooky Parser — location comparison';
     loadComparison();
+  } else if (button.dataset.tab === 'timeline') {
+    $('#heroLocation').textContent = 'Release Radar';
+    document.title = 'Hooky Parser — release timeline';
+    loadReleaseTimeline();
   } else {
     updateLocationHeading();
   }
