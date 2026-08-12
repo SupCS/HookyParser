@@ -713,8 +713,8 @@ def set_imdb_override():
 @app.get("/api/releases")
 def release_timeline():
     today = datetime.now(timezone.utc).date()
-    date_from = request.args.get("date_from", (today - timedelta(days=90)).isoformat())
-    date_to = request.args.get("date_to", (today + timedelta(days=31)).isoformat())
+    date_from = request.args.get("date_from", (today - timedelta(days=30)).isoformat())
+    date_to = request.args.get("date_to", (today + timedelta(days=30)).isoformat())
     requested_locations = request.args.getlist("location")
     selected_locations = [
         location

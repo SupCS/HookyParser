@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { movies: [], loading: false, rangeView: false, undefinedReleases: [] };
+const state = { movies: [], loading: false, rangeView: false, undefinedReleases: [], timelineReleases: [] };
 
 function escapeHtml(value) {
   const node = document.createElement('span');
@@ -322,6 +322,7 @@ async function loadReleaseTimeline() {
   const list = $('#releaseList');
   const selectedLocations = Array.from(document.querySelectorAll('input[name="timeline-location"]:checked')).map((input) => input.value);
   if (!selectedLocations.length) {
+    state.timelineReleases = [];
     chart.innerHTML = '<div class="empty">Select at least one location.</div>';
     list.innerHTML = '';
     $('#timelineSummary').innerHTML = '';
@@ -340,6 +341,7 @@ async function loadReleaseTimeline() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
     const releases = data.releases || [];
+    state.timelineReleases = releases;
     const undefinedReleases = data.undefined_releases || [];
     state.undefinedReleases = undefinedReleases;
     const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
@@ -429,6 +431,7 @@ async function loadReleaseTimeline() {
       return `<article class="release-item"><span class="release-date">${day}.${month}<br>${year}</span><div>${title}<p>${rank} · ${item.location_count} location${item.location_count === 1 ? '' : 's'} on first day</p></div><strong class="release-score">${item.impact_score ?? '—'}<small>impact</small></strong></article>`;
     }).join('');
   } catch (error) {
+    state.timelineReleases = [];
     chart.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
     $('#timelineSummary').innerHTML = '';
   }
@@ -437,7 +440,7 @@ async function loadReleaseTimeline() {
 const timelineLocationOptions = Array.from($('#location').options).map((option) =>
   `<label><input type="checkbox" name="timeline-location" value="${escapeHtml(option.value)}" checked><span>${escapeHtml(option.textContent)}</span></label>`
 ).join('');
-$('#timeline .section-head').insertAdjacentHTML('afterend', `<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options">${timelineLocationOptions}</div></fieldset>`);
+$('#timeline .section-head').insertAdjacentHTML('afterend', `<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineCopyAds">Copy for Ads</button><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options">${timelineLocationOptions}</div></fieldset>`);
 document.querySelectorAll('input[name="timeline-location"]').forEach((input) => input.addEventListener('change', loadReleaseTimeline));
 $('#timelineSelectAll').addEventListener('click', () => {
   document.querySelectorAll('input[name="timeline-location"]').forEach((input) => { input.checked = true; });
@@ -446,6 +449,36 @@ $('#timelineSelectAll').addEventListener('click', () => {
 $('#timelineClearLocations').addEventListener('click', () => {
   document.querySelectorAll('input[name="timeline-location"]').forEach((input) => { input.checked = false; });
   loadReleaseTimeline();
+});
+$('#timelineCopyAds').addEventListener('click', async () => {
+  const button = $('#timelineCopyAds');
+  const releasesByDate = state.timelineReleases.reduce((groups, item) => {
+    (groups[item.release_date] ||= []).push([item.title, item.imdb_popularity]);
+    return groups;
+  }, {});
+  const lines = ['const RELEASES_BY_DATE = {'];
+  Object.entries(releasesByDate).forEach(([date, releases]) => {
+    lines.push(`  ${JSON.stringify(date)}: [`);
+    releases.forEach(([title, popularity]) => lines.push(`    [${JSON.stringify(title)}, ${popularity}],`));
+    lines.push('  ],');
+  });
+  lines.push('};');
+  const output = lines.join('\n');
+  try {
+    await navigator.clipboard.writeText(output);
+    button.textContent = 'Copied!';
+  } catch (error) {
+    const textarea = document.createElement('textarea');
+    textarea.value = output;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    button.textContent = copied ? 'Copied!' : 'Copy failed';
+  }
+  window.setTimeout(() => { button.textContent = 'Copy for Ads'; }, 1600);
 });
 
 $('#search').addEventListener('input', renderMovies);
