@@ -715,6 +715,19 @@ def release_timeline():
     today = datetime.now(timezone.utc).date()
     date_from = request.args.get("date_from", (today - timedelta(days=90)).isoformat())
     date_to = request.args.get("date_to", (today + timedelta(days=31)).isoformat())
+    requested_locations = request.args.getlist("location")
+    selected_locations = [
+        location
+        for value in requested_locations
+        for location in value.split(",")
+        if location
+    ]
+    if not selected_locations:
+        selected_locations = list(LOCATIONS)
+    selected_locations = list(dict.fromkeys(selected_locations))
+    unknown_locations = [location for location in selected_locations if location not in LOCATIONS]
+    if unknown_locations:
+        return jsonify({"error": f"Unknown location: {unknown_locations[0]}"}), 400
     try:
         start = datetime.strptime(date_from, "%Y-%m-%d").date()
         end = datetime.strptime(date_to, "%Y-%m-%d").date()
@@ -724,10 +737,13 @@ def release_timeline():
         return jsonify({"error": "date_from must not be after date_to"}), 400
 
     with db() as connection:
+        location_placeholders = ",".join("?" for _ in selected_locations)
         rows = connection.execute(
-            """SELECT DISTINCT r.location, s.movie_title
+            f"""SELECT DISTINCT r.location, s.movie_title
                FROM scrape_runs r JOIN showings s ON s.run_id = r.id
+               WHERE r.location IN ({location_placeholders})
                ORDER BY s.movie_title"""
+            , selected_locations
         ).fetchall()
 
     unique_titles = {row["movie_title"] for row in rows}
@@ -805,6 +821,7 @@ def release_timeline():
         "date_from": date_from,
         "date_to": date_to,
         "today": today.isoformat(),
+        "locations": selected_locations,
         "omdb_configured": bool(os.environ.get("OMDB_API_KEY")),
         "releases": result,
         "undefined_releases": undefined_result,

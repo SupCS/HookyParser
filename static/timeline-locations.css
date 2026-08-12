@@ -1,0 +1,70 @@
+.timeline-locations {
+  position: relative;
+  margin: 24px 0 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--aid-line);
+  border-radius: 14px;
+  background: var(--aid-blue-50);
+}
+
+.timeline-locations legend {
+  padding: 0 7px;
+  color: var(--aid-slate);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.timeline-location-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timeline-location-options label { cursor: pointer; }
+
+.timeline-location-options input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timeline-location-options span,
+.timeline-location-actions button {
+  display: block;
+  padding: 8px 12px;
+  border: 1px solid var(--aid-line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--aid-slate);
+  font: 700 10px Inter, sans-serif;
+  letter-spacing: .03em;
+  cursor: pointer;
+}
+
+.timeline-location-options input:checked + span {
+  border-color: var(--aid-blue);
+  background: var(--aid-blue);
+  color: #fff;
+}
+
+.timeline-location-options input:focus-visible + span {
+  outline: 2px solid var(--aid-blue);
+  outline-offset: 2px;
+}
+
+.timeline-location-actions {
+  position: absolute;
+  top: -15px;
+  right: 14px;
+  display: flex;
+  gap: 5px;
+}
+
+.timeline-location-actions button { padding: 5px 9px; }
+
+.timeline-location-actions button:hover {
+  border-color: var(--aid-blue);
+  color: var(--aid-blue);
+}

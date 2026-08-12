@@ -320,10 +320,20 @@ async function loadComparison() {
 async function loadReleaseTimeline() {
   const chart = $('#releaseChart');
   const list = $('#releaseList');
+  const selectedLocations = Array.from(document.querySelectorAll('input[name="timeline-location"]:checked')).map((input) => input.value);
+  if (!selectedLocations.length) {
+    chart.innerHTML = '<div class="empty">Select at least one location.</div>';
+    list.innerHTML = '';
+    $('#timelineSummary').innerHTML = '';
+    $('#undefinedSection').classList.add('hidden');
+    return;
+  }
   chart.innerHTML = '<div class="empty">Building release timeline…</div>';
   list.innerHTML = '';
   try {
-    const response = await fetch('/api/releases');
+    const query = new URLSearchParams();
+    selectedLocations.forEach((location) => query.append('location', location));
+    const response = await fetch(`/api/releases?${query}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
     const releases = data.releases || [];
@@ -420,6 +430,20 @@ async function loadReleaseTimeline() {
     $('#timelineSummary').innerHTML = '';
   }
 }
+
+const timelineLocationOptions = Array.from($('#location').options).map((option) =>
+  `<label><input type="checkbox" name="timeline-location" value="${escapeHtml(option.value)}" checked><span>${escapeHtml(option.textContent)}</span></label>`
+).join('');
+$('#timeline .section-head').insertAdjacentHTML('afterend', `<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options">${timelineLocationOptions}</div></fieldset>`);
+document.querySelectorAll('input[name="timeline-location"]').forEach((input) => input.addEventListener('change', loadReleaseTimeline));
+$('#timelineSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('input[name="timeline-location"]').forEach((input) => { input.checked = true; });
+  loadReleaseTimeline();
+});
+$('#timelineClearLocations').addEventListener('click', () => {
+  document.querySelectorAll('input[name="timeline-location"]').forEach((input) => { input.checked = false; });
+  loadReleaseTimeline();
+});
 
 $('#search').addEventListener('input', renderMovies);
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
