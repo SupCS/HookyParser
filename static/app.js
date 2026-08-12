@@ -334,6 +334,9 @@ async function loadReleaseTimeline() {
     const query = new URLSearchParams();
     selectedLocations.forEach((location) => query.append('location', location));
     const response = await fetch(`/api/releases?${query}`);
+    if (!response.headers.get('content-type')?.includes('application/json')) {
+      throw new Error(`The server returned an unexpected response (${response.status}). Deploy the latest backend version and try again.`);
+    }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
     const releases = data.releases || [];

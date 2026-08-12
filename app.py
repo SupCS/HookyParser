@@ -739,11 +739,11 @@ def release_timeline():
     with db() as connection:
         location_placeholders = ",".join("?" for _ in selected_locations)
         rows = connection.execute(
-            f"""SELECT DISTINCT r.location, s.movie_title
+            sql(f"""SELECT DISTINCT r.location, s.movie_title
                FROM scrape_runs r JOIN showings s ON s.run_id = r.id
                WHERE r.location IN ({location_placeholders})
-               ORDER BY s.movie_title"""
-            , selected_locations
+               ORDER BY s.movie_title"""),
+            selected_locations,
         ).fetchall()
 
     unique_titles = {row["movie_title"] for row in rows}
