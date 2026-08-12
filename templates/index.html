@@ -19,17 +19,17 @@
 </head>
 <body>
   <main class="shell">
+    <nav class="brand-switcher" aria-label="Cinema network">
+      <div class="brand-switcher-label"><span>Network</span><small>Select cinema brand</small></div>
+      <div class="brand-options">
+        {% for slug, brand in brands.items() %}<button type="button" data-brand="{{ slug }}" class="{% if slug == 'hooky' %}active{% endif %}" aria-pressed="{% if slug == 'hooky' %}true{% else %}false{% endif %}"><span>{{ brand.name }}</span><small>{{ brand.locations|length }} location{% if brand.locations|length != 1 %}s{% endif %}</small></button>{% endfor %}
+      </div>
+    </nav>
+
     <header class="hero">
-      <div><span class="eyebrow">HOOKY ENTERTAINMENT · SHOWTIMES</span><h1>Hooky Parser<br><em>for <span id="heroLocation">Hutto</span></em></h1></div>
+      <div><span class="eyebrow">HOOKY ENTERTAINMENT · SHOWTIMES</span><h1>Cinema<br>Schedule<br><em>for <span id="heroLocation">Hutto</span></em></h1></div>
       <div class="hero-actions"><div class="auto-status"><i></i><span><b>Next collection</b><small id="nextRefresh">Calculating…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Refresh location <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Refresh all locations for the next 13 days" aria-label="Refresh all locations">All <span>↻</span></button></div></div>
     </header>
-
-    <section class="brand-switcher" aria-label="Cinema brand">
-      <span>Brand</span>
-      <div class="brand-options">
-        {% for slug, brand in brands.items() %}<button type="button" data-brand="{{ slug }}" class="{% if slug == 'hooky' %}active{% endif %}">{{ brand.name }}</button>{% endfor %}
-      </div>
-    </section>
 
     <section class="toolbar schedule-toolbar" aria-label="Filters">
       <label><span>Location</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>

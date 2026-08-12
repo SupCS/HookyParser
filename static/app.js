@@ -20,7 +20,6 @@ function updateLocationHeading() {
   const brandName = selectedBrandConfig().name;
   $('#heroLocation').textContent = selectedLocationName();
   document.querySelector('.hero .eyebrow').textContent = `${brandName.toUpperCase()} · SHOWTIMES`;
-  document.querySelector('.hero h1').innerHTML = `${escapeHtml(brandName)}<br><em>for <span id="heroLocation">${escapeHtml(selectedLocationName())}</span></em>`;
   document.title = `${brandName} — ${selectedLocationName()}`;
 }
 
@@ -558,7 +557,11 @@ document.querySelectorAll('[data-brand]').forEach((button) => button.addEventLis
   state.brand = button.dataset.brand;
   state.movies = [];
   state.timelineReleases = [];
-  document.querySelectorAll('[data-brand]').forEach((item) => item.classList.toggle('active', item === button));
+  document.querySelectorAll('[data-brand]').forEach((item) => {
+    const isActive = item === button;
+    item.classList.toggle('active', isActive);
+    item.setAttribute('aria-pressed', String(isActive));
+  });
   const locationSelect = $('#location');
   locationSelect.replaceChildren(...Object.entries(selectedBrandConfig().locations).map(([slug, location]) => new Option(location.name, slug)));
   const today = appConfig.todayByBrand[state.brand]?.[locationSelect.value];
