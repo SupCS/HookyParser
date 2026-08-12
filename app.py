@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup, Tag
 from flask import Flask, jsonify, render_template, request
 
 from imdb_release_helper import lookup_imdb_id, lookup_movie, normalize_title
+from brands import BRANDS, DEFAULT_BRAND, public_brand_config
 
 psycopg: Any
 dict_row: Any
@@ -35,32 +36,6 @@ except ImportError:  # Local SQLite development does not require PostgreSQL.
 ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("HOOKY_DB", ROOT / "hooky_history.sqlite3"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
-BASE_URL = "https://hookyentertainment.com"
-LOCATIONS = {
-    "addison": "Addison",
-    "baytown": "Baytown",
-    "cary": "Cary",
-    "delray": "Delray Beach",
-    "fredericksburg": "Fredericksburg",
-    "homestead": "Homestead",
-    "hutto": "Hutto",
-    "nashville": "Nashville",
-    "southlake": "Southlake",
-    "waxahachie": "Waxahachie",
-}
-LOCATION_TIMEZONES = {
-    "addison": "America/Chicago", "baytown": "America/Chicago",
-    "cary": "America/New_York", "delray": "America/New_York",
-    "fredericksburg": "America/New_York", "homestead": "America/New_York",
-    "hutto": "America/Chicago", "nashville": "America/Chicago",
-    "southlake": "America/Chicago", "waxahachie": "America/Chicago",
-}
-SITE_IDS = {
-    "addison": 217, "baytown": 216, "cary": 221, "delray": 222,
-    "fredericksburg": 220, "homestead": 223, "hutto": 214,
-    "nashville": 224, "southlake": 206, "waxahachie": 218,
-}
-CIRCUIT_ID = "119"
 FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "30")), 31))
 MANUAL_FUTURE_DAYS = 13
 POPULARITY_CACHE_HOURS = max(1, int(os.environ.get("IMDB_POPULARITY_CACHE_HOURS", "24")))
@@ -97,17 +72,37 @@ def sql(query: str) -> str:
     return query.replace("?", "%s") if DATABASE_URL else query
 
 
+def brand_config(brand: str):
+    if brand not in BRANDS:
+        raise ValueError("Unknown brand")
+    return BRANDS[brand]
+
+
+def location_config(brand: str, location: str):
+    config = brand_config(brand)["locations"].get(location)
+    if config is None:
+        raise ValueError("Unknown location")
+    return config
+
+
+def request_brand() -> str:
+    brand = request.args.get("brand", DEFAULT_BRAND)
+    brand_config(brand)
+    return brand
+
+
 def init_db() -> None:
     schema = """
             CREATE TABLE IF NOT EXISTS scrape_runs (
                 id {primary_key},
+                brand TEXT NOT NULL DEFAULT 'hooky',
                 location TEXT NOT NULL,
                 show_date TEXT NOT NULL,
                 captured_at TEXT NOT NULL,
                 source_url TEXT NOT NULL,
                 movie_count INTEGER NOT NULL,
                 showing_count INTEGER NOT NULL,
-                UNIQUE(location, show_date, captured_at)
+                UNIQUE(brand, location, show_date, captured_at)
             );
             CREATE TABLE IF NOT EXISTS showings (
                 id {primary_key},
@@ -118,8 +113,6 @@ def init_db() -> None:
                 checkout_url TEXT NOT NULL,
                 UNIQUE(run_id, checkout_url)
             );
-            CREATE INDEX IF NOT EXISTS idx_runs_lookup
-            ON scrape_runs(location, show_date, captured_at DESC);
             CREATE TABLE IF NOT EXISTS movie_popularity (
                 normalized_title TEXT PRIMARY KEY,
                 movie_title TEXT NOT NULL,
@@ -143,6 +136,21 @@ def init_db() -> None:
                             connection.execute(statement)
                 else:
                     connection.executescript(schema)
+                if DATABASE_URL:
+                    scrape_columns = {
+                        row["column_name"] for row in connection.execute(
+                            """SELECT column_name FROM information_schema.columns
+                               WHERE table_name='scrape_runs'"""
+                        ).fetchall()
+                    }
+                else:
+                    scrape_columns = {
+                        row["name"] for row in connection.execute("PRAGMA table_info(scrape_runs)").fetchall()
+                    }
+                if "brand" not in scrape_columns:
+                    connection.execute(
+                        "ALTER TABLE scrape_runs ADD COLUMN brand TEXT NOT NULL DEFAULT 'hooky'"
+                    )
                 if DATABASE_URL:
                     popularity_columns = {
                         row["column_name"] for row in connection.execute(
@@ -170,15 +178,21 @@ def init_db() -> None:
                     connection.execute(
                         "ALTER TABLE movie_popularity ADD COLUMN manual_override INTEGER NOT NULL DEFAULT 0"
                     )
+                connection.execute("DROP INDEX IF EXISTS idx_runs_location_day")
+                connection.execute("DROP INDEX IF EXISTS idx_runs_lookup")
                 connection.execute(
                     """DELETE FROM scrape_runs
                        WHERE id NOT IN (
-                           SELECT MAX(id) FROM scrape_runs GROUP BY location, show_date
+                           SELECT MAX(id) FROM scrape_runs GROUP BY brand, location, show_date
                        )"""
                 )
                 connection.execute(
-                    """CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_location_day
-                       ON scrape_runs(location, show_date)"""
+                    """CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_brand_location_day
+                       ON scrape_runs(brand, location, show_date)"""
+                )
+                connection.execute(
+                    """CREATE INDEX IF NOT EXISTS idx_runs_lookup
+                       ON scrape_runs(brand, location, show_date, captured_at DESC)"""
                 )
             return
         except Exception as error:
@@ -223,20 +237,22 @@ def parse_movies(html: str, page_url: str) -> list[dict[str, Any]]:
     return [movie for movie in movies if movie["showings"]]
 
 
-def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
-    if location not in LOCATIONS:
-        raise ValueError("Unknown location")
+def fetch_schedule(brand: str, location: str, show_date: str) -> tuple[list[dict], str]:
+    config = location_config(brand, location)
     datetime.strptime(show_date, "%Y-%m-%d")
-    page_url = f"{BASE_URL}/{location}/feature-films/"
-    site_id = SITE_IDS[location]
+    base_url = config["base_url"].rstrip("/")
+    origin = urlsplit(base_url)
+    graphql_url = f"{origin.scheme}://{origin.netloc}/graphql"
+    page_url = f"{base_url}/feature-films/"
+    site_id = config["site_id"]
     response = requests.post(
-        f"{BASE_URL}/graphql",
+        graphql_url,
         json={"query": SHOWINGS_QUERY, "variables": {"date": show_date, "siteIds": [site_id]}},
         headers={
-            "User-Agent": "HookyHistory/1.0 (+personal analytics)",
+            "User-Agent": "CinemaScheduleHistory/1.0 (+personal analytics)",
             "Accept": "application/json",
             "client-type": "consumer",
-            "circuit-id": CIRCUIT_ID,
+            "circuit-id": str(config["circuit_id"]),
             "site-id": str(site_id),
             "is-electron-mode": "false",
             "Referer": page_url,
@@ -246,10 +262,10 @@ def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
     response.raise_for_status()
     payload = response.json()
     if payload.get("errors"):
-        raise ValueError(payload["errors"][0].get("message", "Hooky GraphQL error"))
+        raise ValueError(payload["errors"][0].get("message", "Cinema GraphQL error"))
     rows = ((payload.get("data") or {}).get("showingsForDate") or {}).get("data") or []
     grouped: dict[str, dict[str, Any]] = {}
-    location_tz = ZoneInfo(LOCATION_TIMEZONES[location])
+    location_tz = ZoneInfo(config["timezone"])
     for row in rows:
         movie_data = row.get("movie") or {}
         slug = movie_data.get("urlSlug")
@@ -258,28 +274,28 @@ def fetch_schedule(location: str, show_date: str) -> tuple[list[dict], str]:
         movie = grouped.setdefault(slug, {
             "slug": slug,
             "title": movie_data.get("name") or slug.replace("-", " ").title(),
-            "url": f"{BASE_URL}/{location}/movie/{slug}",
+            "url": f"{base_url}/movie/{slug}",
             "showings": [],
         })
         local_time = datetime.fromisoformat(row["time"].replace("Z", "+00:00")).astimezone(location_tz)
         movie["showings"].append({
             "time": local_time.strftime("%I:%M%p").lstrip("0"),
-            "url": f"{BASE_URL}/{location}/checkout/showing/{slug}/{row['id']}",
+            "url": f"{base_url}/checkout/showing/{slug}/{row['id']}",
             "id": str(row["id"]),
         })
     return list(grouped.values()), page_url
 
 
-def save_snapshot(location: str, show_date: str, movies: list[dict], source_url: str) -> int:
+def save_snapshot(brand: str, location: str, show_date: str, movies: list[dict], source_url: str) -> int:
     update_movie_popularity(movies)
     captured_at = datetime.now(timezone.utc).isoformat()
     showing_count = sum(len(movie["showings"]) for movie in movies)
-    location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
+    location_today = datetime.now(ZoneInfo(location_config(brand, location)["timezone"])).date().isoformat()
     with db() as connection:
         existing = connection.execute(
             sql("""SELECT id FROM scrape_runs
-                   WHERE location=? AND show_date=? ORDER BY captured_at DESC LIMIT 1"""),
-            (location, show_date),
+                   WHERE brand=? AND location=? AND show_date=? ORDER BY captured_at DESC LIMIT 1"""),
+            (brand, location, show_date),
         ).fetchone()
 
         if existing and show_date < location_today:
@@ -296,13 +312,13 @@ def save_snapshot(location: str, show_date: str, movies: list[dict], source_url:
         else:
             insert_run = sql(
                 """INSERT INTO scrape_runs
-                   (location, show_date, captured_at, source_url, movie_count, showing_count)
-                   VALUES (?, ?, ?, ?, ?, ?)"""
+                   (brand, location, show_date, captured_at, source_url, movie_count, showing_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)"""
             )
             if DATABASE_URL:
                 cursor = connection.execute(
                     insert_run + " RETURNING id",
-                    (location, show_date, captured_at, source_url, len(movies), showing_count),
+                    (brand, location, show_date, captured_at, source_url, len(movies), showing_count),
                 )
                 inserted = cursor.fetchone()
                 if inserted is None:
@@ -311,7 +327,7 @@ def save_snapshot(location: str, show_date: str, movies: list[dict], source_url:
             else:
                 cursor = connection.execute(
                     insert_run,
-                    (location, show_date, captured_at, source_url, len(movies), showing_count),
+                    (brand, location, show_date, captured_at, source_url, len(movies), showing_count),
                 )
                 if cursor.lastrowid is None:
                     raise RuntimeError("SQLite did not return a snapshot id")
@@ -332,12 +348,12 @@ def save_snapshot(location: str, show_date: str, movies: list[dict], source_url:
     return run_id
 
 
-def latest_snapshot(location: str, show_date: str):
+def latest_snapshot(brand: str, location: str, show_date: str):
     with db() as connection:
         run = connection.execute(
-            sql("""SELECT * FROM scrape_runs WHERE location=? AND show_date=?
+            sql("""SELECT * FROM scrape_runs WHERE brand=? AND location=? AND show_date=?
                ORDER BY captured_at DESC LIMIT 1"""),
-            (location, show_date),
+            (brand, location, show_date),
         ).fetchone()
         if not run:
             return None
@@ -471,19 +487,29 @@ def update_movie_popularity(movies: list[dict]) -> None:
 
 @app.get("/")
 def index():
-    hutto_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES["hutto"])).date().isoformat()
-    today_by_location = {
-        location: datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
-        for location in LOCATIONS
+    brands = public_brand_config()
+    today_by_brand = {
+        brand_slug: {
+            location_slug: datetime.now(ZoneInfo(location["timezone"])).date().isoformat()
+            for location_slug, location in brand["locations"].items()
+        }
+        for brand_slug, brand in BRANDS.items()
     }
+    default_locations = {
+        slug: location["name"] for slug, location in BRANDS[DEFAULT_BRAND]["locations"].items()
+    }
+    default_today = today_by_brand[DEFAULT_BRAND]["hutto"]
     return render_template(
         "index.html",
-        locations=LOCATIONS,
-        today=hutto_today,
+        brands=brands,
+        locations=default_locations,
+        today=default_today,
         hooky_config={
+            "defaultBrand": DEFAULT_BRAND,
+            "brands": brands,
             "manualFutureDays": MANUAL_FUTURE_DAYS,
             "cronFutureDays": FUTURE_DAYS,
-            "todayByLocation": today_by_location,
+            "todayByBrand": today_by_brand,
         },
     )
 
@@ -500,20 +526,20 @@ def health():
 
 @app.get("/api/schedule")
 def schedule():
-    location = request.args.get("location", "hutto")
-    if location not in LOCATIONS:
-        return jsonify({"error": "Unknown location"}), 400
-    location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date().isoformat()
-    show_date = request.args.get("date", location_today)
-    refresh = request.args.get("refresh") == "1"
     try:
-        snapshot = None if refresh else latest_snapshot(location, show_date)
+        brand = request_brand()
+        location = request.args.get("location") or next(iter(brand_config(brand)["locations"]))
+        config = location_config(brand, location)
+        location_today = datetime.now(ZoneInfo(config["timezone"])).date().isoformat()
+        show_date = request.args.get("date", location_today)
+        refresh = request.args.get("refresh") == "1"
+        snapshot = None if refresh else latest_snapshot(brand, location, show_date)
         if snapshot is None:
             if show_date < location_today:
-                return jsonify({"error": "No saved data is available for this past date, and Hooky no longer publishes its schedule."}), 404
-            movies, source_url = fetch_schedule(location, show_date)
-            save_snapshot(location, show_date, movies, source_url)
-            snapshot = latest_snapshot(location, show_date)
+                return jsonify({"error": "No saved data is available for this past date, and the cinema no longer publishes its schedule."}), 404
+            movies, source_url = fetch_schedule(brand, location, show_date)
+            save_snapshot(brand, location, show_date, movies, source_url)
+            snapshot = latest_snapshot(brand, location, show_date)
         return jsonify(snapshot)
     except (ValueError, requests.RequestException) as error:
         return jsonify({"error": str(error)}), 400
@@ -524,10 +550,13 @@ def schedule():
 
 @app.get("/api/schedule-range")
 def schedule_range():
-    location = request.args.get("location", "hutto")
-    if location not in LOCATIONS:
-        return jsonify({"error": "Unknown location"}), 400
-    location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date()
+    try:
+        brand = request_brand()
+        location = request.args.get("location") or next(iter(brand_config(brand)["locations"]))
+        config = location_config(brand, location)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    location_today = datetime.now(ZoneInfo(config["timezone"])).date()
     date_from = request.args.get("date_from", location_today.isoformat())
     date_to = request.args.get("date_to", date_from)
     try:
@@ -546,9 +575,9 @@ def schedule_range():
             sql("""SELECT r.show_date, r.captured_at, s.movie_slug, s.movie_title,
                           s.show_time, s.checkout_url, s.id
                    FROM scrape_runs r LEFT JOIN showings s ON s.run_id = r.id
-                   WHERE r.location=? AND r.show_date>=? AND r.show_date<=?
+                   WHERE r.brand=? AND r.location=? AND r.show_date>=? AND r.show_date<=?
                    ORDER BY s.movie_title, r.show_date, s.id"""),
-            (location, date_from, date_to),
+            (brand, location, date_from, date_to),
         ).fetchall()
 
     grouped: dict[str, dict] = {}
@@ -575,7 +604,7 @@ def schedule_range():
         movies.append(movie)
     attach_cached_popularity(movies)
     return jsonify({
-        "location": location,
+        "brand": brand, "location": location,
         "date_from": date_from,
         "date_to": date_to,
         "requested_days": days,
@@ -585,22 +614,31 @@ def schedule_range():
     })
 
 
-def collect_all_locations(locations=None):
-    locations = locations or list(LOCATIONS)
+def collect_all_locations(locations=None, brand=None):
     results = []
-    for location in locations:
-        if location not in LOCATIONS:
-            results.append({"location": location, "error": f"Unknown location: {location}"})
+    brand_slugs = [brand or DEFAULT_BRAND] if locations else ([brand] if brand else list(BRANDS))
+    for brand_slug in brand_slugs:
+        try:
+            configured_locations = brand_config(brand_slug)["locations"]
+        except ValueError as error:
+            results.append({"brand": brand_slug, "error": str(error)})
             continue
-        location_today = datetime.now(ZoneInfo(LOCATION_TIMEZONES[location])).date()
-        for offset in range(FUTURE_DAYS + 1):
-            show_date = (location_today + timedelta(days=offset)).isoformat()
+        selected_locations = locations or list(configured_locations)
+        for location in selected_locations:
             try:
-                movies, source_url = fetch_schedule(location, show_date)
-                run_id = save_snapshot(location, show_date, movies, source_url)
-                results.append({"location": location, "date": show_date, "run_id": run_id})
-            except Exception as error:
-                results.append({"location": location, "date": show_date, "error": str(error)})
+                config = location_config(brand_slug, location)
+            except ValueError as error:
+                results.append({"brand": brand_slug, "location": location, "error": str(error)})
+                continue
+            location_today = datetime.now(ZoneInfo(config["timezone"])).date()
+            for offset in range(FUTURE_DAYS + 1):
+                show_date = (location_today + timedelta(days=offset)).isoformat()
+                try:
+                    movies, source_url = fetch_schedule(brand_slug, location, show_date)
+                    run_id = save_snapshot(brand_slug, location, show_date, movies, source_url)
+                    results.append({"brand": brand_slug, "location": location, "date": show_date, "run_id": run_id})
+                except Exception as error:
+                    results.append({"brand": brand_slug, "location": location, "date": show_date, "error": str(error)})
     return results
 
 
@@ -610,15 +648,22 @@ def collect():
     if collector_key and request.headers.get("X-Collector-Key") != collector_key:
         return jsonify({"error": "Unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
-    return jsonify({"results": collect_all_locations(payload.get("locations"))})
+    return jsonify({"results": collect_all_locations(payload.get("locations"), payload.get("brand"))})
 
 
 @app.get("/api/history")
 def history():
+    try:
+        brand = request_brand()
+        configured_locations = brand_config(brand)["locations"]
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
     location = request.args.get("location")
+    if location and location not in configured_locations:
+        return jsonify({"error": "Unknown location"}), 400
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
-    conditions, params = [], []
+    conditions, params = ["brand=?"], [brand]
     if location:
         conditions.append("location=?")
         params.append(location)
@@ -712,6 +757,11 @@ def set_imdb_override():
 
 @app.get("/api/releases")
 def release_timeline():
+    try:
+        brand = request_brand()
+        configured_locations = brand_config(brand)["locations"]
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
     today = datetime.now(timezone.utc).date()
     date_from = request.args.get("date_from", (today - timedelta(days=30)).isoformat())
     date_to = request.args.get("date_to", (today + timedelta(days=30)).isoformat())
@@ -723,9 +773,9 @@ def release_timeline():
         if location
     ]
     if not selected_locations:
-        selected_locations = list(LOCATIONS)
+        selected_locations = list(configured_locations)
     selected_locations = list(dict.fromkeys(selected_locations))
-    unknown_locations = [location for location in selected_locations if location not in LOCATIONS]
+    unknown_locations = [location for location in selected_locations if location not in configured_locations]
     if unknown_locations:
         return jsonify({"error": f"Unknown location: {unknown_locations[0]}"}), 400
     try:
@@ -741,9 +791,9 @@ def release_timeline():
         rows = connection.execute(
             sql(f"""SELECT DISTINCT r.location, s.movie_title
                FROM scrape_runs r JOIN showings s ON s.run_id = r.id
-               WHERE r.location IN ({location_placeholders})
+               WHERE r.brand=? AND r.location IN ({location_placeholders})
                ORDER BY s.movie_title"""),
-            selected_locations,
+            [brand, *selected_locations],
         ).fetchall()
 
     unique_titles = {row["movie_title"] for row in rows}
@@ -821,6 +871,7 @@ def release_timeline():
         "date_from": date_from,
         "date_to": date_to,
         "today": today.isoformat(),
+        "brand": brand,
         "locations": selected_locations,
         "omdb_configured": bool(os.environ.get("OMDB_API_KEY")),
         "releases": result,
@@ -830,6 +881,11 @@ def release_timeline():
 
 @app.get("/api/compare")
 def compare_locations():
+    try:
+        brand = request_brand()
+        configured_locations = brand_config(brand)["locations"]
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
     if not date_from or not date_to:
@@ -847,14 +903,14 @@ def compare_locations():
             sql("""SELECT r.location, r.show_date, s.movie_title, s.show_time
                    FROM scrape_runs r
                    LEFT JOIN showings s ON s.run_id = r.id
-                   WHERE r.show_date>=? AND r.show_date<=?
+                   WHERE r.brand=? AND r.show_date>=? AND r.show_date<=?
                    ORDER BY r.location, r.show_date, s.movie_title, s.id"""),
-            (date_from, date_to),
+            (brand, date_from, date_to),
         ).fetchall()
 
     summaries = {
-        slug: {"location": slug, "name": name, "days": set(), "movies": {}}
-        for slug, name in LOCATIONS.items()
+        slug: {"location": slug, "name": location["name"], "days": set(), "movies": {}}
+        for slug, location in configured_locations.items()
     }
     for row in rows:
         if row["location"] not in summaries:
@@ -885,6 +941,7 @@ def compare_locations():
     return jsonify({
         "date_from": date_from,
         "date_to": date_to,
+        "brand": brand,
         "requested_days": (end - start).days + 1,
         "single_day": start == end,
         "locations": result,

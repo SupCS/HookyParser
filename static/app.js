@@ -1,5 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { movies: [], loading: false, rangeView: false, undefinedReleases: [], timelineReleases: [] };
+const appConfig = window.HOOKY_CONFIG || { defaultBrand: 'hooky', brands: {}, todayByBrand: {}, manualFutureDays: 13 };
+const state = { brand: appConfig.defaultBrand || 'hooky', movies: [], loading: false, rangeView: false, undefinedReleases: [], timelineReleases: [] };
 
 function escapeHtml(value) {
   const node = document.createElement('span');
@@ -11,9 +12,20 @@ function selectedLocationName() {
   return $('#location').selectedOptions[0]?.textContent || 'Hutto';
 }
 
+function selectedBrandConfig() {
+  return appConfig.brands[state.brand] || { name: state.brand, locations: {} };
+}
+
 function updateLocationHeading() {
+  const brandName = selectedBrandConfig().name;
   $('#heroLocation').textContent = selectedLocationName();
-  document.title = `Hooky Parser for ${selectedLocationName()}`;
+  document.querySelector('.hero .eyebrow').textContent = `${brandName.toUpperCase()} · SHOWTIMES`;
+  document.querySelector('.hero h1').innerHTML = `${escapeHtml(brandName)}<br><em>for <span id="heroLocation">${escapeHtml(selectedLocationName())}</span></em>`;
+  document.title = `${brandName} — ${selectedLocationName()}`;
+}
+
+function brandParams(values = {}) {
+  return new URLSearchParams({ brand: state.brand, ...values });
 }
 
 function renderMovies() {
@@ -58,7 +70,7 @@ async function loadSchedule(refresh = false) {
   const button = $('#refresh');
   button.disabled = true;
   $('#status').textContent = 'Loading…';
-  const query = new URLSearchParams({ location: $('#location').value, date: $('#date').value });
+  const query = brandParams({ location: $('#location').value, date: $('#date').value });
   if (refresh) query.set('refresh', '1');
 
   try {
@@ -93,7 +105,7 @@ async function loadScheduleRange() {
   const button = $('#refresh');
   button.disabled = true;
   $('#status').textContent = 'Loading date range…';
-  const query = new URLSearchParams({ location: $('#location').value, date_from: $('#date').value, date_to: $('#dateTo').value });
+  const query = brandParams({ location: $('#location').value, date_from: $('#date').value, date_to: $('#dateTo').value });
   try {
     const response = await fetch(`/api/schedule-range?${query}`);
     const data = await response.json();
@@ -122,15 +134,16 @@ async function refreshSchedules(locations, button, scopeLabel) {
   const originalHtml = button.innerHTML;
   const actionButtons = [$('#refresh'), $('#refreshAll')];
   actionButtons.forEach((item) => { item.disabled = true; });
-  const config = window.HOOKY_CONFIG || { manualFutureDays: 13, todayByLocation: {} };
+  const config = appConfig;
+  const brand = state.brand;
   const jobs = [];
   locations.forEach((location) => {
-    const startValue = config.todayByLocation[location];
+    const startValue = config.todayByBrand[brand]?.[location];
     if (!startValue) return;
     const [year, month, day] = startValue.split('-').map(Number);
     for (let offset = 0; offset <= config.manualFutureDays; offset += 1) {
       const target = new Date(Date.UTC(year, month - 1, day + offset));
-      jobs.push({ location, date: target.toISOString().slice(0, 10) });
+      jobs.push({ brand, location, date: target.toISOString().slice(0, 10) });
     }
   });
 
@@ -141,7 +154,7 @@ async function refreshSchedules(locations, button, scopeLabel) {
     while (queue.length) {
       const job = queue.shift();
       try {
-        const query = new URLSearchParams({ location: job.location, date: job.date, refresh: '1' });
+        const query = new URLSearchParams({ brand: job.brand, location: job.location, date: job.date, refresh: '1' });
         const response = await fetch(`/api/schedule?${query}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
@@ -222,7 +235,7 @@ function renderChart(rows) {
 
 async function loadHistory() {
   try {
-    const query = new URLSearchParams({ location: $('#location').value });
+    const query = brandParams({ location: $('#location').value });
     if ($('#historyFrom').value) query.set('date_from', $('#historyFrom').value);
     if ($('#historyTo').value) query.set('date_to', $('#historyTo').value);
     const response = await fetch(`/api/history?${query}`);
@@ -297,7 +310,7 @@ async function loadComparison() {
   const list = $('#comparisonList');
   list.innerHTML = '<div class="empty">Counting movies and showtimes…</div>';
   try {
-    const query = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+    const query = brandParams({ date_from: dateFrom, date_to: dateTo });
     const response = await fetch(`/api/compare?${query}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not build comparison');
@@ -332,7 +345,7 @@ async function loadReleaseTimeline() {
   chart.innerHTML = '<div class="empty">Building release timeline…</div>';
   list.innerHTML = '';
   try {
-    const query = new URLSearchParams();
+    const query = brandParams();
     selectedLocations.forEach((location) => query.append('location', location));
     const response = await fetch(`/api/releases?${query}`);
     if (!response.headers.get('content-type')?.includes('application/json')) {
@@ -437,11 +450,18 @@ async function loadReleaseTimeline() {
   }
 }
 
-const timelineLocationOptions = Array.from($('#location').options).map((option) =>
-  `<label><input type="checkbox" name="timeline-location" value="${escapeHtml(option.value)}" checked><span>${escapeHtml(option.textContent)}</span></label>`
-).join('');
-$('#timeline .section-head').insertAdjacentHTML('afterend', `<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineCopyAds">Copy for Ads</button><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options">${timelineLocationOptions}</div></fieldset>`);
-document.querySelectorAll('input[name="timeline-location"]').forEach((input) => input.addEventListener('change', loadReleaseTimeline));
+$('#timeline .section-head').insertAdjacentHTML('afterend', '<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineCopyAds">Copy for Ads</button><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options"></div></fieldset>');
+
+function renderTimelineLocationOptions() {
+  $('.timeline-location-options').innerHTML = Object.entries(selectedBrandConfig().locations).map(([slug, location]) =>
+    `<label><input type="checkbox" name="timeline-location" value="${escapeHtml(slug)}" checked><span>${escapeHtml(location.name)}</span></label>`
+  ).join('');
+}
+
+renderTimelineLocationOptions();
+$('.timeline-location-options').addEventListener('change', (event) => {
+  if (event.target.matches('input[name="timeline-location"]')) loadReleaseTimeline();
+});
 $('#timelineSelectAll').addEventListener('click', () => {
   document.querySelectorAll('input[name="timeline-location"]').forEach((input) => { input.checked = true; });
   loadReleaseTimeline();
@@ -533,6 +553,35 @@ $('#undefinedList').addEventListener('click', async (event) => {
     button.textContent = 'Set IMDb link';
   }
 });
+document.querySelectorAll('[data-brand]').forEach((button) => button.addEventListener('click', async () => {
+  if (state.loading || button.dataset.brand === state.brand) return;
+  state.brand = button.dataset.brand;
+  state.movies = [];
+  state.timelineReleases = [];
+  document.querySelectorAll('[data-brand]').forEach((item) => item.classList.toggle('active', item === button));
+  const locationSelect = $('#location');
+  locationSelect.replaceChildren(...Object.entries(selectedBrandConfig().locations).map(([slug, location]) => new Option(location.name, slug)));
+  const today = appConfig.todayByBrand[state.brand]?.[locationSelect.value];
+  if (today) {
+    $('#date').value = today;
+    $('#dateTo').value = today;
+    $('#dateTo').min = today;
+  }
+  renderTimelineLocationOptions();
+  const activeTab = document.querySelector('.tabs button.active')?.dataset.tab || 'schedule';
+  if (activeTab === 'timeline') {
+    $('#heroLocation').textContent = 'Release Radar';
+    document.title = `${selectedBrandConfig().name} — release timeline`;
+    await loadReleaseTimeline();
+  } else if (activeTab === 'comparison') {
+    $('#heroLocation').textContent = 'All Locations';
+    document.title = `${selectedBrandConfig().name} — location comparison`;
+    await loadComparison();
+  } else {
+    updateLocationHeading();
+    await loadSchedule();
+  }
+}));
 $('#refresh').addEventListener('click', refreshSelectedLocation);
 $('#refreshAll').addEventListener('click', refreshAllLocations);
 $('#historyFrom').addEventListener('change', loadHistory);
@@ -556,11 +605,11 @@ document.querySelectorAll('.tabs button').forEach((button) => button.addEventLis
   document.body.classList.toggle('compare-mode', ['comparison', 'timeline'].includes(button.dataset.tab));
   if (button.dataset.tab === 'comparison') {
     $('#heroLocation').textContent = 'All Locations';
-    document.title = 'Hooky Parser — location comparison';
+    document.title = `${selectedBrandConfig().name} — location comparison`;
     loadComparison();
   } else if (button.dataset.tab === 'timeline') {
     $('#heroLocation').textContent = 'Release Radar';
-    document.title = 'Hooky Parser — release timeline';
+    document.title = `${selectedBrandConfig().name} — release timeline`;
     loadReleaseTimeline();
   } else {
     updateLocationHeading();
