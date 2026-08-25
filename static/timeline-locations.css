@@ -68,3 +68,35 @@
   border-color: var(--aid-blue);
   color: var(--aid-blue);
 }
+
+.timeline-date-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 260px));
+  gap: 14px;
+  margin: 14px 0 24px;
+}
+
+.timeline-date-filters label > span {
+  display: block;
+  margin: 0 0 7px 4px;
+  color: var(--aid-slate);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.timeline-date-filters input {
+  width: 100%;
+  height: 100%;
+  padding: 0 14px 0 12px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--aid-ink);
+  font: 600 13px Inter, sans-serif;
+}
+
+@media(max-width:600px) {
+  .timeline-date-filters { grid-template-columns: 1fr; }
+}

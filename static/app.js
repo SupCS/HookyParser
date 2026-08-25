@@ -27,6 +27,12 @@ function brandParams(values = {}) {
   return new URLSearchParams({ brand: state.brand, ...values });
 }
 
+function shiftIsoDate(value, days) {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function renderMovies() {
   const term = $('#search').value.trim().toLowerCase();
   const movies = state.movies.filter((movie) => movie.title.toLowerCase().includes(term));
@@ -344,7 +350,10 @@ async function loadReleaseTimeline() {
   chart.innerHTML = '<div class="empty">Building release timeline…</div>';
   list.innerHTML = '';
   try {
-    const query = brandParams();
+    const query = brandParams({
+      date_from: $('#timelineFrom').value,
+      date_to: $('#timelineTo').value,
+    });
     selectedLocations.forEach((location) => query.append('location', location));
     const response = await fetch(`/api/releases?${query}`);
     if (!response.headers.get('content-type')?.includes('application/json')) {
@@ -450,6 +459,12 @@ async function loadReleaseTimeline() {
 }
 
 $('#timeline .section-head').insertAdjacentHTML('afterend', '<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineCopyAds">Copy for Ads</button><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options"></div></fieldset>');
+$('.timeline-locations').insertAdjacentHTML('afterend', '<div class="timeline-date-filters" aria-label="Timeline date range"><label><span>From</span><div class="control date-control"><input id="timelineFrom" type="date"></div></label><label><span>To</span><div class="control date-control"><input id="timelineTo" type="date"></div></label></div>');
+
+const timelineToday = $('#date').value;
+$('#timelineFrom').value = shiftIsoDate(timelineToday, -30);
+$('#timelineTo').value = shiftIsoDate(timelineToday, 30);
+$('#timelineTo').min = $('#timelineFrom').value;
 
 function renderTimelineLocationOptions() {
   $('.timeline-location-options').innerHTML = Object.entries(selectedBrandConfig().locations).map(([slug, location]) =>
@@ -467,6 +482,16 @@ $('#timelineSelectAll').addEventListener('click', () => {
 });
 $('#timelineClearLocations').addEventListener('click', () => {
   document.querySelectorAll('input[name="timeline-location"]').forEach((input) => { input.checked = false; });
+  loadReleaseTimeline();
+});
+$('#timelineFrom').addEventListener('change', () => {
+  if ($('#timelineFrom').value > $('#timelineTo').value) $('#timelineTo').value = $('#timelineFrom').value;
+  $('#timelineTo').min = $('#timelineFrom').value;
+  loadReleaseTimeline();
+});
+$('#timelineTo').addEventListener('change', () => {
+  if ($('#timelineTo').value < $('#timelineFrom').value) $('#timelineFrom').value = $('#timelineTo').value;
+  $('#timelineTo').min = $('#timelineFrom').value;
   loadReleaseTimeline();
 });
 $('#timelineCopyAds').addEventListener('click', async () => {
