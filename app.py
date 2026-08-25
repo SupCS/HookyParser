@@ -789,14 +789,23 @@ def release_timeline():
     with db() as connection:
         location_placeholders = ",".join("?" for _ in selected_locations)
         rows = connection.execute(
-            sql(f"""SELECT DISTINCT r.location, s.movie_title
+            sql(f"""SELECT r.location, s.movie_title,
+                      MAX(CASE WHEN r.show_date>=? AND r.show_date<=? THEN 1 ELSE 0 END)
+                          AS scheduled_in_window
                FROM scrape_runs r JOIN showings s ON s.run_id = r.id
                WHERE r.brand=? AND r.location IN ({location_placeholders})
+               GROUP BY r.location, s.movie_title
                ORDER BY s.movie_title"""),
-            [brand, *selected_locations],
+            [date_from, date_to, brand, *selected_locations],
         ).fetchall()
 
     unique_titles = {row["movie_title"] for row in rows}
+    scheduled_in_window: dict[str, bool] = {}
+    for row in rows:
+        key = normalize_title(row["movie_title"])
+        scheduled_in_window[key] = scheduled_in_window.get(key, False) or bool(
+            row["scheduled_in_window"]
+        )
     update_movie_popularity([{"title": title} for title in unique_titles])
 
     with db() as connection:
@@ -845,13 +854,24 @@ def release_timeline():
     ranked_ids = {item["imdb_id"] for item in result if item["imdb_popularity"] is not None}
     undefined: dict[str, dict] = {}
     for title in unique_titles:
-        imdb = popularity.get(normalize_title(title), {})
+        title_key = normalize_title(title)
+        imdb = popularity.get(title_key, {})
         if imdb.get("imdb_id") in ranked_ids:
             continue
-        if imdb.get("release_date") and not date_from <= imdb["release_date"] <= date_to:
+        release_outside_window = bool(
+            imdb.get("release_date")
+            and not date_from <= imdb["release_date"] <= date_to
+        )
+        # Keep historical titles out of Undefined, but surface a title that is
+        # actively scheduled in this window when IMDb resolved it to a release
+        # outside the same window. This usually means an ambiguous title was
+        # matched to an older movie and needs the manual IMDb override.
+        if release_outside_window and not scheduled_in_window.get(title_key, False):
             continue
         undefined_key = imdb.get("imdb_id") or normalize_title(title)
-        if imdb.get("imdb_id") and not imdb.get("release_date"):
+        if release_outside_window:
+            reason = "IMDb release date is outside this window — verify title match"
+        elif imdb.get("imdb_id") and not imdb.get("release_date"):
             reason = "Official release date unavailable"
         elif imdb.get("imdb_id"):
             reason = "IMDb rank unavailable"
