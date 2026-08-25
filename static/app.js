@@ -365,8 +365,8 @@ async function loadReleaseTimeline() {
       const poster = item.poster_url ? `<img src="${escapeHtml(item.poster_url)}" alt="" loading="lazy">` : '<div class="undefined-poster">?</div>';
       const title = item.imdb_id ? `<a href="https://www.imdb.com/title/${escapeHtml(item.imdb_id)}/" target="_blank" rel="noreferrer">${escapeHtml(item.title)}</a>` : `<strong>${escapeHtml(item.title)}</strong>`;
       const date = item.release_date ? new Date(`${item.release_date}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Release date unavailable';
-      const override = item.reason === 'OMDb match unavailable'
-        ? `<button class="imdb-override" type="button" data-undefined-index="${index}">Set IMDb link</button>` : '';
+      const overrideLabel = item.imdb_id ? 'Change IMDb link' : 'Set IMDb link';
+      const override = `<button class="imdb-override" type="button" data-undefined-index="${index}" data-default-label="${overrideLabel}">${overrideLabel}</button>`;
       return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small>${override}</div></article>`;
     }).join('');
     if (!releases.length) {
@@ -523,6 +523,7 @@ $('#undefinedList').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-undefined-index]');
   if (!button) return;
   const item = state.undefinedReleases[Number(button.dataset.undefinedIndex)];
+  const defaultLabel = button.dataset.defaultLabel || 'Set IMDb link';
   const imdb = window.prompt(`Enter the exact IMDb title, IMDb URL, or tt ID for “${item.title}”:`);
   if (!imdb) return;
   button.disabled = true;
@@ -549,7 +550,7 @@ $('#undefinedList').addEventListener('click', async (event) => {
   } catch (error) {
     window.alert(error.message);
     button.disabled = false;
-    button.textContent = 'Set IMDb link';
+    button.textContent = defaultLabel;
   }
 });
 document.querySelectorAll('[data-brand]').forEach((button) => button.addEventListener('click', async () => {

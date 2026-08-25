@@ -878,7 +878,10 @@ def release_timeline():
         else:
             reason = "OMDb match unavailable"
         undefined.setdefault(undefined_key, {
-            "title": imdb.get("movie_title") or title,
+            # Keep the cinema title as the override key. The matched IMDb title
+            # may be a different, older movie with the same or a similar name.
+            "title": title,
+            "imdb_title": imdb.get("movie_title"),
             "release_date": imdb.get("release_date"),
             "imdb_id": imdb.get("imdb_id") or None,
             "poster_url": imdb.get("poster_url"),
