@@ -25,7 +25,7 @@ OMDb или IMDb.
 python collect.py
 ```
 
-Команда cron собирает все настроенные бренды и локации на сегодня и 30 следующих дней через публичный GraphQL INDY, сохраняет отдельную дневную запись для каждой даты и завершается. Данные разделены ключом бренда и не объединяются между сетями. Повторный сбор текущих и будущих дней перезаписывает их данные; прошедшие дни остаются неизменными. Горизонт cron можно изменить переменной `HOOKY_FUTURE_DAYS` (от 0 до 31, по умолчанию 30). В интерфейсе основная кнопка обновляет выбранную локацию, а компактная кнопка «Все» — все локации выбранного бренда; оба ручных действия всегда используют горизонт в 13 будущих дней. При отсутствии `DATABASE_URL` используется `hooky_history.sqlite3`.
+Команда cron собирает все настроенные бренды и локации на сегодня и 90 следующих дней через публичный GraphQL INDY, сохраняет отдельную дневную запись для каждой даты и завершается. Данные разделены ключом бренда и не объединяются между сетями. Повторный сбор текущих и будущих дней перезаписывает их данные; прошедшие дни остаются неизменными. Горизонт cron можно изменить переменной `HOOKY_FUTURE_DAYS` (от 0 до 365, по умолчанию 90). В интерфейсе основная кнопка обновляет выбранную локацию, а компактная кнопка «Все» — все локации выбранного бренда; оба ручных действия всегда используют горизонт в 13 будущих дней. При отсутствии `DATABASE_URL` используется `hooky_history.sqlite3`.
 
 ## Деплой на Railway
 
@@ -79,3 +79,15 @@ Invoke-RestMethod -Method Post -ContentType application/json `
 ```
 
 Кнопка в интерфейсе обновляет только выбранную локацию. Cron, `python collect.py` и защищённый `/api/collect` всегда собирают все локации по умолчанию.
+
+## Release timeline updates
+
+The timeline discovers films from saved cinema showtimes AND the published Feature Films / Coming Soon catalogs for each location. Catalog discovery has no future-day cutoff and includes films without showtimes. The default timeline window starts 30 days ago and has no upper date limit; its chart extends to the latest ranked release found. Leave the To field empty for all future releases, or enter a date to filter explicitly. Films missing dates or IMDb ranks appear under Undefined. Films not yet published in the cinema catalogs or collected schedules cannot be discovered.
+
+Set the same `DATABASE_URL` and `OMDB_API_KEY` in BOTH Railway services (web and cron). `HOOKY_FUTURE_DAYS` controls only daily showtime history (default 90, range 0-365); it does not limit release catalog discovery or the timeline. Cron saves catalogs and schedules first, then refreshes metadata once per unique title. Catalog failures are reported in collection results and do not delete previously discovered titles. Manual schedule refresh still covers 13 future days.
+
+While visible, Release timeline reloads saved data every minute and when returning to the browser tab. Background reads do not trigger collection or IMDb requests. The summary shows the latest catalog update separately from the latest schedule collection timestamp and the earliest of the selected locations' last saved schedule dates. Schedule coverage does not limit catalog releases. These timestamps are not proof that every location or source succeeded. The Next refresh countdown indicates the planned cron time, not a successful run.
+
+Check the `python collect.py` service logs to confirm cron runs and exits. Web and cron must share PostgreSQL; separate services' local SQLite files are not shared.
+
+Regression checks: `python -m unittest discover -s tests -v` and `node tests/test_timeline_refresh.cjs`.

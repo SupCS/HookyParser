@@ -7,6 +7,7 @@ import time
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ except ImportError:  # Local SQLite development does not require PostgreSQL.
 ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("HOOKY_DB", ROOT / "hooky_history.sqlite3"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
-FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "30")), 31))
+FUTURE_DAYS = max(0, min(int(os.environ.get("HOOKY_FUTURE_DAYS", "90")), 365))
 MANUAL_FUTURE_DAYS = 13
 POPULARITY_CACHE_HOURS = max(1, int(os.environ.get("IMDB_POPULARITY_CACHE_HOURS", "24")))
 POPULARITY_ERROR_CACHE_MINUTES = max(
@@ -57,15 +58,21 @@ logger.setLevel(logging.INFO)
 _missing_omdb_key_logged = False
 
 
+@contextmanager
 def db():
     if DATABASE_URL:
         if psycopg is None:
             raise RuntimeError("psycopg is required when DATABASE_URL is set")
-        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+        connection = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    else:
+        connection = sqlite3.connect(DB_PATH)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def sql(query: str) -> str:
@@ -124,6 +131,15 @@ def init_db() -> None:
                 release_date_checked INTEGER NOT NULL DEFAULT 0,
                 manual_override INTEGER NOT NULL DEFAULT 0,
                 fetched_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS release_catalog (
+                brand TEXT NOT NULL,
+                location TEXT NOT NULL,
+                movie_slug TEXT NOT NULL,
+                movie_title TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                captured_at TEXT NOT NULL,
+                PRIMARY KEY (brand, location, movie_slug)
             );
             """.format(primary_key="BIGSERIAL PRIMARY KEY" if DATABASE_URL else "INTEGER PRIMARY KEY")
     last_error = None
@@ -237,6 +253,62 @@ def parse_movies(html: str, page_url: str) -> list[dict[str, Any]]:
     return [movie for movie in movies if movie["showings"]]
 
 
+def parse_release_catalog(html: str, page_url: str) -> list[dict]:
+    """Include every published title link, even films with no showtimes yet."""
+    movies = {}
+    origin = urlsplit(page_url)
+    for anchor in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+        href = anchor.get("href")
+        if not isinstance(href, str):
+            continue
+        url = urljoin(page_url, href)
+        parsed = urlsplit(url)
+        match = re.search(r"/movie/([^/]+?)/?$", parsed.path)
+        if parsed.netloc != origin.netloc or not match:
+            continue
+        slug = match.group(1)
+        title = " ".join(anchor.get_text(" ", strip=True).split())
+        if title:
+            movies[slug] = {"slug": slug, "title": title, "url": url}
+    return list(movies.values())
+
+
+def collect_release_catalog(brand: str, location: str) -> tuple[list[dict], list[dict]]:
+    """Read published catalogs without applying a release-date horizon."""
+    config = location_config(brand, location)
+    movies = {}
+    results = []
+    for page in ("feature-films", "coming-soon"):
+        url = f"{config['base_url'].rstrip('/')}/{page}/"
+        try:
+            response = requests.get(url, timeout=25, headers={
+                "User-Agent": "CinemaScheduleHistory/1.0 (+personal analytics)",
+            })
+            response.raise_for_status()
+            discovered = parse_release_catalog(response.text, url)
+            if not discovered:
+                raise ValueError("No movie links found in release catalog; verify source markup")
+            captured_at = datetime.now(timezone.utc).isoformat()
+            with db() as connection:
+                for movie in discovered:
+                    connection.execute(
+                        sql("""INSERT INTO release_catalog
+                            (brand, location, movie_slug, movie_title, source_url, captured_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(brand, location, movie_slug) DO UPDATE SET
+                            movie_title=excluded.movie_title, source_url=excluded.source_url,
+                            captured_at=excluded.captured_at"""),
+                        (brand, location, movie["slug"], movie["title"], url, captured_at),
+                    )
+            movies.update({movie["slug"]: movie for movie in discovered})
+            results.append({"brand": brand, "location": location, "stage": "release_catalog",
+                            "source_url": url, "movie_count": len(discovered)})
+        except Exception as error:
+            results.append({"brand": brand, "location": location, "stage": "release_catalog",
+                            "source_url": url, "error": str(error)})
+    return list(movies.values()), results
+
+
 def fetch_schedule(brand: str, location: str, show_date: str) -> tuple[list[dict], str]:
     config = location_config(brand, location)
     datetime.strptime(show_date, "%Y-%m-%d")
@@ -287,7 +359,6 @@ def fetch_schedule(brand: str, location: str, show_date: str) -> tuple[list[dict
 
 
 def save_snapshot(brand: str, location: str, show_date: str, movies: list[dict], source_url: str) -> int:
-    update_movie_popularity(movies)
     captured_at = datetime.now(timezone.utc).isoformat()
     showing_count = sum(len(movie["showings"]) for movie in movies)
     location_today = datetime.now(ZoneInfo(location_config(brand, location)["timezone"])).date().isoformat()
@@ -399,7 +470,7 @@ def update_movie_popularity(movies: list[dict]) -> None:
         return
     if not os.environ.get("OMDB_API_KEY"):
         if not _missing_omdb_key_logged:
-            logger.warning("IMDb popularity disabled: OMDB_API_KEY is missing in the web service")
+            logger.warning("IMDb popularity disabled: OMDB_API_KEY is missing in this service")
             _missing_omdb_key_logged = True
         return
     now = datetime.now(timezone.utc)
@@ -616,6 +687,7 @@ def schedule_range():
 
 def collect_all_locations(locations=None, brand=None):
     results = []
+    collected_movies = {}
     brand_slugs = [brand or DEFAULT_BRAND] if locations else ([brand] if brand else list(BRANDS))
     for brand_slug in brand_slugs:
         try:
@@ -631,14 +703,27 @@ def collect_all_locations(locations=None, brand=None):
                 results.append({"brand": brand_slug, "location": location, "error": str(error)})
                 continue
             location_today = datetime.now(ZoneInfo(config["timezone"])).date()
+            catalog_movies, catalog_results = collect_release_catalog(brand_slug, location)
+            results.extend(catalog_results)
+            for movie in catalog_movies:
+                collected_movies[normalize_title(movie["title"])] = movie
             for offset in range(FUTURE_DAYS + 1):
                 show_date = (location_today + timedelta(days=offset)).isoformat()
                 try:
                     movies, source_url = fetch_schedule(brand_slug, location, show_date)
                     run_id = save_snapshot(brand_slug, location, show_date, movies, source_url)
+                    for movie in movies:
+                        collected_movies[normalize_title(movie["title"])] = movie
                     results.append({"brand": brand_slug, "location": location, "date": show_date, "run_id": run_id})
                 except Exception as error:
                     results.append({"brand": brand_slug, "location": location, "date": show_date, "error": str(error)})
+    # Save every schedule before external metadata lookups, and resolve each
+    # title only once per collection (even across dates and cinema brands).
+    try:
+        update_movie_popularity(list(collected_movies.values()))
+    except Exception as error:
+        logger.exception("Schedules saved, but release metadata refresh failed")
+        results.append({"stage": "release_metadata", "error": str(error)})
     return results
 
 
@@ -763,8 +848,9 @@ def release_timeline():
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     today = datetime.now(timezone.utc).date()
-    date_from = request.args.get("date_from", (today - timedelta(days=30)).isoformat())
-    date_to = request.args.get("date_to", (today + timedelta(days=30)).isoformat())
+    date_from = request.args.get("date_from") or (today - timedelta(days=30)).isoformat()
+    requested_date_to = request.args.get("date_to")
+    date_to = requested_date_to or "9999-12-31"
     requested_locations = request.args.getlist("location")
     selected_locations = [
         location
@@ -788,6 +874,13 @@ def release_timeline():
 
     with db() as connection:
         location_placeholders = ",".join("?" for _ in selected_locations)
+        coverage = connection.execute(
+            sql(f"""SELECT location, MAX(show_date) AS collected_through,
+                       MAX(captured_at) AS last_collected_at
+                FROM scrape_runs WHERE brand=? AND location IN ({location_placeholders})
+                GROUP BY location ORDER BY location"""),
+            [brand, *selected_locations],
+        ).fetchall()
         rows = connection.execute(
             sql(f"""SELECT r.location, s.movie_title,
                       MAX(CASE WHEN r.show_date>=? AND r.show_date<=? THEN 1 ELSE 0 END)
@@ -798,6 +891,17 @@ def release_timeline():
                ORDER BY s.movie_title"""),
             [date_from, date_to, brand, *selected_locations],
         ).fetchall()
+        catalog_rows = connection.execute(
+            sql(f"""SELECT location, movie_title, 0 AS scheduled_in_window
+                FROM release_catalog WHERE brand=? AND location IN ({location_placeholders})"""),
+            [brand, *selected_locations],
+        ).fetchall()
+        catalog_updated_at = connection.execute(
+            sql(f"""SELECT MAX(captured_at) AS captured_at FROM release_catalog
+                WHERE brand=? AND location IN ({location_placeholders})"""),
+            [brand, *selected_locations],
+        ).fetchone()["captured_at"]
+    rows = list(rows) + list(catalog_rows)
 
     unique_titles = {row["movie_title"] for row in rows}
     scheduled_in_window: dict[str, bool] = {}
@@ -806,7 +910,8 @@ def release_timeline():
         scheduled_in_window[key] = scheduled_in_window.get(key, False) or bool(
             row["scheduled_in_window"]
         )
-    update_movie_popularity([{"title": title} for title in unique_titles])
+    if request.args.get("refresh_metadata") != "0":
+        update_movie_popularity([{"title": title} for title in unique_titles])
 
     with db() as connection:
         popularity_rows = connection.execute(
@@ -890,13 +995,21 @@ def release_timeline():
     result = [item for item in result if item["imdb_popularity"] is not None]
     result.sort(key=lambda item: (item["release_date"], -item["impact_score"], item["title"]))
     undefined_result = sorted(undefined.values(), key=lambda item: (item["release_date"] or "9999-99-99", item["title"]))
+    # Use the actual latest release to size the chart, without imposing a
+    # discovery/filter cutoff when the user leaves the upper date empty.
+    chart_date_to = requested_date_to or max(
+        [date_from, today.isoformat()] + [item["release_date"] for item in result]
+    )
     return jsonify({
         "date_from": date_from,
-        "date_to": date_to,
+        "date_to": chart_date_to,
+        "future_unlimited": not bool(requested_date_to),
         "today": today.isoformat(),
         "brand": brand,
         "locations": selected_locations,
         "omdb_configured": bool(os.environ.get("OMDB_API_KEY")),
+        "collection_coverage": [dict(row) for row in coverage],
+        "catalog_updated_at": catalog_updated_at,
         "releases": result,
         "undefined_releases": undefined_result,
     })

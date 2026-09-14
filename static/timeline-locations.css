@@ -100,3 +100,5 @@
 @media(max-width:600px) {
   .timeline-date-filters { grid-template-columns: 1fr; }
 }
+
+.timeline-summary { flex-wrap: wrap; }

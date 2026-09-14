@@ -335,7 +335,13 @@ async function loadComparison() {
   }
 }
 
-async function loadReleaseTimeline() {
+let timelineRequest = null;
+
+async function loadReleaseTimeline(background = false) {
+  if (background && timelineRequest) return;
+  timelineRequest?.abort();
+  const controller = new AbortController();
+  timelineRequest = controller;
   const chart = $('#releaseChart');
   const list = $('#releaseList');
   const selectedLocations = Array.from(document.querySelectorAll('input[name="timeline-location"]:checked')).map((input) => input.value);
@@ -345,21 +351,26 @@ async function loadReleaseTimeline() {
     list.innerHTML = '';
     $('#timelineSummary').innerHTML = '';
     $('#undefinedSection').classList.add('hidden');
+    timelineRequest = null;
     return;
   }
-  chart.innerHTML = '<div class="empty">Building release timeline…</div>';
-  list.innerHTML = '';
+  if (!background) {
+    chart.innerHTML = '<div class="empty">Building release timeline…</div>';
+    list.innerHTML = '';
+  }
   try {
     const query = brandParams({
       date_from: $('#timelineFrom').value,
       date_to: $('#timelineTo').value,
+      refresh_metadata: background ? '0' : '1',
     });
     selectedLocations.forEach((location) => query.append('location', location));
-    const response = await fetch(`/api/releases?${query}`);
+    const response = await fetch(`/api/releases?${query}`, { signal: controller.signal, cache: 'no-store' });
     if (!response.headers.get('content-type')?.includes('application/json')) {
       throw new Error(`The server returned an unexpected response (${response.status}). Deploy the latest backend version and try again.`);
     }
     const data = await response.json();
+    if (controller.signal.aborted) return;
     if (!response.ok) throw new Error(data.error || 'Could not build release timeline');
     const releases = data.releases || [];
     state.timelineReleases = releases;
@@ -368,6 +379,15 @@ async function loadReleaseTimeline() {
     const ranked = releases.filter((item) => Number.isInteger(item.impact_score));
     const future = releases.filter((item) => item.release_date > data.today).length;
     $('#timelineSummary').innerHTML = `<span>${releases.length} ranked releases</span><span>${future} upcoming</span><span>${undefinedReleases.length} undefined</span><span>Dates from OMDb</span>`;
+    const coverage = data.collection_coverage || [];
+    const coveredThrough = coverage.map((item) => item.collected_through).sort()[0];
+    const lastCollected = coverage.map((item) => item.last_collected_at).sort().at(-1);
+    const coverageLabel = coverage.length < selectedLocations.length
+      ? 'Some locations have no saved schedules'
+      : `Saved schedules through ${coveredThrough}`;
+    $('#timelineSummary').insertAdjacentHTML('beforeend', `<span>${escapeHtml(coverageLabel)}</span>${lastCollected ? `<span>Last collected: ${escapeHtml(new Date(lastCollected).toLocaleString())}</span>` : ''}`);
+    if (data.future_unlimited) $('#timelineSummary').insertAdjacentHTML('beforeend', '<span>All future releases</span>');
+    if (data.catalog_updated_at) $('#timelineSummary').insertAdjacentHTML('beforeend', `<span>Catalog updated: ${escapeHtml(new Date(data.catalog_updated_at).toLocaleString())}</span>`);
     $('#undefinedSection').classList.toggle('hidden', !undefinedReleases.length);
     $('#undefinedCount').textContent = `${undefinedReleases.length} movie${undefinedReleases.length === 1 ? '' : 's'}`;
     $('#undefinedList').innerHTML = undefinedReleases.map((item, index) => {
@@ -379,6 +399,7 @@ async function loadReleaseTimeline() {
       return `<article class="undefined-item">${poster}<div>${title}<span>${escapeHtml(date)}</span><small>${escapeHtml(item.reason)}</small>${override}</div></article>`;
     }).join('');
     if (!releases.length) {
+      list.innerHTML = '';
       chart.innerHTML = `<div class="empty">${data.omdb_configured ? 'No ranked releases with confirmed OMDb dates were found in this window.' : 'OMDb lookup is disabled: start the server with OMDB_API_KEY to build the release timeline.'}</div>`;
       return;
     }
@@ -452,18 +473,30 @@ async function loadReleaseTimeline() {
       return `<article class="release-item"><span class="release-date">${day}.${month}<br>${year}</span><div>${title}<p>${rank} · ${item.location_count} location${item.location_count === 1 ? '' : 's'} on first day</p></div><strong class="release-score">${item.impact_score ?? '—'}<small>impact</small></strong></article>`;
     }).join('');
   } catch (error) {
+    if (controller.signal.aborted || background) return;
     state.timelineReleases = [];
     chart.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
     $('#timelineSummary').innerHTML = '';
+  } finally {
+    if (timelineRequest === controller) timelineRequest = null;
   }
 }
 
+function refreshVisibleTimeline() {
+  if (!document.hidden && document.querySelector('.tabs button.active')?.dataset.tab === 'timeline') {
+    loadReleaseTimeline(true);
+  }
+}
+
+setInterval(refreshVisibleTimeline, 60000);
+document.addEventListener('visibilitychange', refreshVisibleTimeline);
+
 $('#timeline .section-head').insertAdjacentHTML('afterend', '<fieldset class="timeline-locations"><legend>Locations</legend><div class="timeline-location-actions"><button type="button" id="timelineCopyAds">Copy for Ads</button><button type="button" id="timelineSelectAll">All</button><button type="button" id="timelineClearLocations">Clear</button></div><div class="timeline-location-options"></div></fieldset>');
-$('.timeline-locations').insertAdjacentHTML('afterend', '<div class="timeline-date-filters" aria-label="Timeline date range"><label><span>From</span><div class="control date-control"><input id="timelineFrom" type="date"></div></label><label><span>To</span><div class="control date-control"><input id="timelineTo" type="date"></div></label></div>');
+$('.timeline-locations').insertAdjacentHTML('afterend', '<div class="timeline-date-filters" aria-label="Timeline date range"><label><span>From</span><div class="control date-control"><input id="timelineFrom" type="date"></div></label><label><span>To (empty = all future releases)</span><div class="control date-control"><input id="timelineTo" type="date"></div></label></div>');
 
 const timelineToday = $('#date').value;
 $('#timelineFrom').value = shiftIsoDate(timelineToday, -30);
-$('#timelineTo').value = shiftIsoDate(timelineToday, 30);
+$('#timelineTo').value = '';
 $('#timelineTo').min = $('#timelineFrom').value;
 
 function renderTimelineLocationOptions() {
@@ -485,12 +518,12 @@ $('#timelineClearLocations').addEventListener('click', () => {
   loadReleaseTimeline();
 });
 $('#timelineFrom').addEventListener('change', () => {
-  if ($('#timelineFrom').value > $('#timelineTo').value) $('#timelineTo').value = $('#timelineFrom').value;
+  if ($('#timelineTo').value && $('#timelineFrom').value > $('#timelineTo').value) $('#timelineTo').value = $('#timelineFrom').value;
   $('#timelineTo').min = $('#timelineFrom').value;
   loadReleaseTimeline();
 });
 $('#timelineTo').addEventListener('change', () => {
-  if ($('#timelineTo').value < $('#timelineFrom').value) $('#timelineFrom').value = $('#timelineTo').value;
+  if ($('#timelineTo').value && $('#timelineTo').value < $('#timelineFrom').value) $('#timelineFrom').value = $('#timelineTo').value;
   $('#timelineTo').min = $('#timelineFrom').value;
   loadReleaseTimeline();
 });
