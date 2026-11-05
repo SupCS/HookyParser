@@ -123,6 +123,40 @@ class ReleaseCollectionTests(unittest.TestCase):
         self.assertIn("run_id", results[-1])
         update.assert_called_once_with([self.movie])
 
+    def test_movie_locations_distinguishes_empty_missing_and_partial_schedules(self):
+        locations = {slug: {"name": slug.title(), "timezone": "UTC"}
+                     for slug in ("one", "two", "empty", "missing")}
+        brands = {"test": {"locations": locations}, "other": {"locations": locations}}
+        day = self.today.isoformat()
+        tomorrow = (self.today + timedelta(days=1)).isoformat()
+        with patch.object(app, "BRANDS", brands), patch.object(app, "fetch_schedule") as fetch:
+            app.save_snapshot("test", "one", day, [self.movie], "https://example.com")
+            app.save_snapshot("test", "one", tomorrow, [self.movie], "https://example.com")
+            app.save_snapshot("test", "two", day, [self.movie], "https://example.com")
+            app.save_snapshot("test", "empty", day, [], "https://example.com")
+            app.save_snapshot("other", "missing", day, [self.movie], "https://example.com")
+            response = app.app.test_client().get(
+                f"/api/schedule-locations?brand=test&date_from={day}&date_to={tomorrow}")
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            items = {item["location"]: item for item in data["locations"]}
+            self.assertEqual(data["requested_days"], 2)
+            self.assertEqual(items["one"]["available_days"], 2)
+            self.assertEqual(len(items["one"]["movies"][0]["dates"]), 2)
+            self.assertEqual(items["two"]["available_days"], 1)
+            self.assertEqual(items["empty"]["available_days"], 1)
+            self.assertEqual(items["empty"]["movies"], [])
+            self.assertEqual(items["missing"]["available_days"], 0)
+            self.assertEqual(items["missing"]["movies"], [])
+            fetch.assert_not_called()
+
+    def test_movie_locations_validates_dates_and_brand(self):
+        client = app.app.test_client()
+        for query in ("brand=unknown", "date_from=invalid", "date_from=2026-11-05&date_to=2026-11-01",
+                      "date_from=2026-01-01&date_to=2028-01-01"):
+            with self.subTest(query=query):
+                self.assertEqual(client.get(f"/api/schedule-locations?{query}").status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

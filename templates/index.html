@@ -31,6 +31,7 @@
       <div class="hero-actions"><div class="auto-status"><i></i><span><b>Next collection</b><small id="nextRefresh">Calculating…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Refresh location <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Refresh all locations for the next 13 days" aria-label="Refresh all locations">All <span>↻</span></button></div></div>
     </header>
 
+    <div class="schedule-view-switch" role="group" aria-label="Schedule view"><span>View schedule</span><button type="button" data-schedule-view="locations" aria-pressed="true">By location</button><button type="button" data-schedule-view="movies" aria-pressed="false">By movie</button><small id="scheduleViewHelp">Choose a location to browse its movies.</small></div>
     <section class="toolbar schedule-toolbar" aria-label="Filters">
       <label><span>Location</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>
       <label><span>From</span><div class="control date-control"><input id="date" type="date" value="{{ today }}"></div></label>

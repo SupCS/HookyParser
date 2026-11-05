@@ -1,6 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const appConfig = window.HOOKY_CONFIG || { defaultBrand: 'hooky', brands: {}, todayByBrand: {}, manualFutureDays: 13 };
-const state = { brand: appConfig.defaultBrand || 'hooky', movies: [], loading: false, rangeView: false, undefinedReleases: [], timelineReleases: [] };
+const state = { brand: appConfig.defaultBrand || 'hooky', scheduleView: 'locations', scheduleLocations: [], movies: [], loading: false, rangeView: false, undefinedReleases: [], timelineReleases: [] };
 
 function escapeHtml(value) {
   const node = document.createElement('span');
@@ -18,9 +18,10 @@ function selectedBrandConfig() {
 
 function updateLocationHeading() {
   const brandName = selectedBrandConfig().name;
-  $('#heroLocation').textContent = selectedLocationName();
+  const name = state.scheduleView === 'movies' && document.querySelector('[data-tab="schedule"]').classList.contains('active') ? 'All Locations' : selectedLocationName();
+  $('#heroLocation').textContent = name;
   document.querySelector('.hero .eyebrow').textContent = `${brandName.toUpperCase()} · SHOWTIMES`;
-  document.title = `${brandName} — ${selectedLocationName()}`;
+  document.title = `${brandName} — ${name}`;
 }
 
 function brandParams(values = {}) {
@@ -34,6 +35,7 @@ function shiftIsoDate(value, days) {
 }
 
 function renderMovies() {
+  if (state.scheduleView === 'movies') return renderMovieLocations();
   const term = $('#search').value.trim().toLowerCase();
   const movies = state.movies.filter((movie) => movie.title.toLowerCase().includes(term));
   if (state.rangeView) {
@@ -67,7 +69,72 @@ function renderMovies() {
   }).join('') : '<div class="empty">No movies match your search.</div>';
 }
 
+function renderMovieLocations() {
+  const term = $('#search').value.trim().toLowerCase();
+  const matches = state.scheduleLocations.map((location) => ({ ...location,
+    movies: location.movies.filter((movie) => movie.title.toLowerCase().includes(term)),
+  }));
+  const playing = matches.filter((location) => location.movies.length);
+  const other = matches.filter((location) => !location.movies.length);
+  const titles = new Set();
+  let showings = 0;
+  playing.forEach((location) => location.movies.forEach((movie) => {
+    titles.add(movie.title);
+    movie.dates.forEach((day) => { showings += day.showings.length; });
+  }));
+  $('#movieCount').textContent = titles.size;
+  $('#showingCount').textContent = showings;
+  $('#average').textContent = titles.size ? (showings / titles.size).toFixed(1) : '0';
+  const cards = playing.map((location, index) => {
+    const movies = location.movies.map((movie) => `<section class="location-movie"><h4>${escapeHtml(movie.title)}</h4>${movie.dates.map((day) => {
+      const label = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+      return `<div class="location-day"><b>${escapeHtml(label)}</b><div class="times">${day.showings.map((show) => `<a href="${escapeHtml(show.url)}" target="_blank" rel="noreferrer">${escapeHtml(show.time)}</a>`).join('')}</div></div>`;
+    }).join('')}</section>`).join('');
+    return `<details class="movie" open><summary><span class="rank">${String(index + 1).padStart(2, '0')}</span><div><h3>${escapeHtml(location.name)}</h3><p>${location.available_days}/${state.locationRequestedDays} days with saved data</p></div><span class="count">${location.movies.length} matching movie${location.movies.length === 1 ? '' : 's'}</span></summary><div class="location-movies">${movies}</div></details>`;
+  }).join('');
+  const missing = other.map((location) => {
+    const message = location.available_days === state.locationRequestedDays
+      ? 'No matching showtimes in saved schedules'
+      : location.available_days ? `No matches found · incomplete data (${location.available_days}/${state.locationRequestedDays} days)` : 'No saved schedule for these dates';
+    return `<div class="location-no-match"><strong>${escapeHtml(location.name)}</strong><span>${message}</span></div>`;
+  }).join('');
+  $('#movieList').innerHTML = `<p class="location-results" role="status">${playing.length} of ${matches.length} locations ${term ? 'with matching showtimes' : 'with scheduled movies'} · selected date range</p>${cards || '<div class="empty">No matching showtimes found in saved data for these dates.</div>'}${missing ? `<section class="location-other"><h3>Other locations</h3>${missing}</section>` : ''}`;
+}
+
+async function loadMovieLocations() {
+  if (state.loading) return;
+  const requestedRange = `${$('#date').value}/${$('#dateTo').value}`;
+  state.loading = true;
+  $('#refresh').disabled = true;
+  document.querySelectorAll('[data-schedule-view]').forEach((button) => { button.disabled = true; });
+  $('#status').textContent = 'Loading all locations…';
+  $('#movieList').innerHTML = '<div class="empty">Searching schedules across all locations…</div>';
+  try {
+    const query = brandParams({ date_from: $('#date').value, date_to: $('#dateTo').value });
+    const response = await fetch(`/api/schedule-locations?${query}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load locations');
+    state.scheduleLocations = data.locations;
+    state.locationRequestedDays = data.requested_days;
+    const captured = data.locations.map((item) => item.captured_at).filter(Boolean).sort().at(-1);
+    $('#captured').textContent = captured ? new Date(captured).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
+    $('#status').textContent = `${data.locations.filter((item) => item.available_days === data.requested_days).length}/${data.locations.length} locations with full date coverage`;
+    renderMovieLocations();
+  } catch (error) {
+    state.scheduleLocations = [];
+    ['movieCount', 'showingCount', 'average', 'captured'].forEach((id) => { $(`#${id}`).textContent = '—'; });
+    $('#movieList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    $('#status').textContent = 'Failed to load';
+  } finally {
+    state.loading = false;
+    $('#refresh').disabled = false;
+    document.querySelectorAll('[data-schedule-view]').forEach((button) => { button.disabled = false; });
+    if (requestedRange !== `${$('#date').value}/${$('#dateTo').value}`) loadMovieLocations();
+  }
+}
+
 async function loadSchedule(refresh = false) {
+  if (state.scheduleView === 'movies') return loadMovieLocations();
   state.rangeView = $('#date').value !== $('#dateTo').value;
   if (state.rangeView && !refresh) return loadScheduleRange();
   if (state.loading) return;
@@ -191,6 +258,7 @@ async function refreshSchedules(locations, button, scopeLabel) {
 }
 
 function refreshSelectedLocation() {
+  if (state.scheduleView === 'movies') return refreshAllLocations();
   return refreshSchedules([$('#location').value], $('#refresh'), 'Refreshing location');
 }
 
@@ -558,7 +626,22 @@ $('#timelineCopyAds').addEventListener('click', async () => {
   window.setTimeout(() => { button.textContent = 'Copy for Ads'; }, 1600);
 });
 
-$('#search').addEventListener('input', renderMovies);
+$('#search').addEventListener('input', () => {
+  if (state.scheduleView === 'movies' && state.loading) return;
+  renderMovies();
+});
+document.querySelectorAll('[data-schedule-view]').forEach((button) => button.addEventListener('click', () => {
+  if (state.loading || state.scheduleView === button.dataset.scheduleView) return;
+  state.scheduleView = button.dataset.scheduleView;
+  const byMovie = state.scheduleView === 'movies';
+  document.querySelectorAll('[data-schedule-view]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+  document.body.classList.toggle('schedule-movie-mode', byMovie);
+  $('#location').disabled = byMovie;
+  $('#scheduleViewHelp').textContent = byMovie ? 'Search a movie across every location in this network.' : 'Choose a location to browse its movies.';
+  $('#refresh').innerHTML = byMovie ? 'Refresh all locations <span>↗</span>' : 'Refresh location <span>↗</span>';
+  updateLocationHeading();
+  loadSchedule();
+}));
 $('#location').addEventListener('change', () => { updateLocationHeading(); loadSchedule(); });
 $('#date').addEventListener('change', () => {
   if ($('#date').value > $('#dateTo').value) $('#dateTo').value = $('#date').value;
@@ -667,6 +750,9 @@ document.querySelectorAll('.tabs button').forEach((button) => button.addEventLis
     updateLocationHeading();
   }
   if (button.dataset.tab === 'history') loadHistory();
+  document.body.classList.toggle('schedule-tab-away', button.dataset.tab !== 'schedule');
+  $('#location').disabled = button.dataset.tab === 'schedule' && state.scheduleView === 'movies';
+  if (button.dataset.tab === 'schedule') loadSchedule();
 }));
 
 updateLocationHeading();
