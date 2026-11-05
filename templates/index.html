@@ -34,7 +34,7 @@
 
     <details class="ending-soon" id="endingSoon">
       <summary><span class="ending-icon" aria-hidden="true">!</span><span class="ending-heading"><strong>Ending soon</strong><small>Across this network · today and the next 6 days</small></span><span id="endingCount" role="status">Checking…</span><span class="ending-chevron" aria-hidden="true">⌄</span></summary>
-      <div class="ending-content"><p class="ending-explainer">Last scheduled dates by movie and location. These are inferred from saved showtimes, not confirmed end-of-run dates. Review before switching off creatives; schedules can be extended.</p><div id="endingAlerts"><p>Checking saved schedules…</p></div></div>
+      <div class="ending-content"><div class="ending-tools"><label class="ending-search"><span class="ending-search-icon" aria-hidden="true">⌕</span><input id="endingSearch" type="search" placeholder="Search movies or locations" aria-label="Search ending movies or locations"></label><span id="endingResults" role="status"></span></div><p class="ending-explainer">Last scheduled show by location. Dates may be extended. <span class="ending-verify">Verify date</span> means the later schedule is incomplete or outdated.</p><div id="endingAlerts"><p>Checking saved schedules…</p></div></div>
     </details>
     <div class="schedule-view-switch" role="group" aria-label="Schedule view"><span>View schedule</span><button type="button" data-schedule-view="locations" aria-pressed="true">By location</button><button type="button" data-schedule-view="movies" aria-pressed="false">By movie</button><small id="scheduleViewHelp">Choose a location to browse its movies.</small></div>
     <section class="toolbar schedule-toolbar" aria-label="Filters">
