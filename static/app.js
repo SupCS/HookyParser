@@ -586,22 +586,12 @@ $('#undefinedList').addEventListener('click', async (event) => {
   if (!imdb) return;
   button.disabled = true;
   button.textContent = 'Checking…';
-  async function submit(editorKey) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (editorKey) headers['X-Collector-Key'] = editorKey;
-    return fetch('/api/releases/imdb-override', {
-      method: 'POST', headers, body: JSON.stringify({ title: item.title, imdb }),
-    });
-  }
   try {
-    let editorKey = sessionStorage.getItem('hookyEditorKey') || '';
-    let response = await submit(editorKey);
-    if (response.status === 401) {
-      editorKey = window.prompt('Enter the collector/editor key:') || '';
-      if (!editorKey) throw new Error('Editor key is required');
-      response = await submit(editorKey);
-      if (response.ok) sessionStorage.setItem('hookyEditorKey', editorKey);
-    }
+    const response = await fetch('/api/releases/imdb-override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: item.title, imdb }),
+    });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not save IMDb link');
     await loadReleaseTimeline();

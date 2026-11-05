@@ -809,9 +809,6 @@ def parse_imdb_reference(value: str) -> str | None:
 
 @app.post("/api/releases/imdb-override")
 def set_imdb_override():
-    collector_key = os.environ.get("COLLECTOR_KEY")
-    if collector_key and request.headers.get("X-Collector-Key") != collector_key:
-        return jsonify({"error": "Editor key required"}), 401
     payload = request.get_json(silent=True) or {}
     original_title = " ".join(str(payload.get("title") or "").split())
     imdb_value = " ".join(str(payload.get("imdb") or "").split())
