@@ -685,6 +685,73 @@ def schedule_range():
     })
 
 
+def build_ending_alerts(rows, locations, now):
+    """Infer local last scheduled dates; expose publication limits separately."""
+    coverage = {slug: {} for slug in locations}
+    programmed_through = {slug: "" for slug in locations}
+    movies = {}
+    fresh_after = (now - timedelta(hours=48)).isoformat()
+    for row in rows:
+        location = row["location"]
+        if location not in locations:
+            continue
+        coverage[location][row["show_date"]] = row
+        if row["movie_title"]:
+            if row["captured_at"] >= fresh_after:
+                programmed_through[location] = max(programmed_through[location], row["show_date"])
+            key = (location, row["movie_title"])
+            if key not in movies or row["show_date"] > movies[key]["show_date"]:
+                movies[key] = row
+    alerts, unconfirmed = [], []
+    for (location, title), last in movies.items():
+        today = now.astimezone(ZoneInfo(locations[location]["timezone"])).date()
+        last_date = datetime.strptime(last["show_date"], "%Y-%m-%d").date()
+        days_left = (last_date - today).days
+        if not 0 <= days_left < 7:
+            continue
+        after = [coverage[location].get((last_date + timedelta(days=offset)).isoformat())
+                 for offset in range(1, 8)]
+        # Empty future snapshots alone do not establish that a cinema has
+        # published its next schedule. Require actual later programming too.
+        complete = all(day and day["captured_at"] >= fresh_after for day in after)
+        later_programming = programmed_through[location] >= (last_date + timedelta(days=7)).isoformat()
+        fresh_last = last["captured_at"] >= fresh_after
+        item = {"title": title, "location": location, "location_name": locations[location]["name"],
+                "last_date": last["show_date"], "days_left": days_left,
+                "captured_at": last["captured_at"]}
+        if complete and later_programming and fresh_last:
+            alerts.append(item)
+        else:
+            item["reason"] = "Saved schedules are over 48 hours old" if not fresh_last else "Later schedule is incomplete, stale, or not yet published"
+            unconfirmed.append(item)
+    order = lambda item: (item["days_left"], item["title"].casefold(), item["location_name"])
+    return sorted(alerts, key=order), sorted(unconfirmed, key=order)
+
+
+@app.get("/api/ending-soon")
+def ending_soon():
+    try:
+        brand = request_brand()
+        locations = brand_config(brand)["locations"]
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    now = datetime.now(timezone.utc)
+    first_day = min(now.astimezone(ZoneInfo(config["timezone"])).date().isoformat()
+                    for config in locations.values())
+    with db() as connection:
+        rows = connection.execute(sql("""SELECT DISTINCT r.location, r.show_date,
+                r.captured_at, s.movie_title
+            FROM scrape_runs r LEFT JOIN showings s ON s.run_id=r.id
+            WHERE r.brand=? AND r.show_date>=?
+            ORDER BY r.show_date, s.movie_title"""), (brand, first_day)).fetchall()
+    alerts, unconfirmed = build_ending_alerts(rows, locations, now)
+    covered_locations = {row["location"] for row in rows}
+    return jsonify({"brand": brand, "alerts": alerts, "unconfirmed": unconfirmed,
+                    "missing_locations": [config["name"] for slug, config in locations.items()
+                                          if slug not in covered_locations],
+                    "checked_at": now.isoformat(), "window_days": 7})
+
+
 @app.get("/api/schedule-locations")
 def schedule_locations():
     """Read saved schedules across a network, including empty/missing coverage."""

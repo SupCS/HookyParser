@@ -248,6 +248,7 @@ async function refreshSchedules(locations, button, scopeLabel) {
     button.innerHTML = originalHtml;
   }
   await loadSchedule(false);
+  loadEndingSoon();
   if (document.querySelector('[data-tab="comparison"]').classList.contains('active')) await loadComparison();
   if (failures.length) {
     $('#status').textContent = `Done with ${failures.length} errors`;
@@ -687,6 +688,7 @@ $('#undefinedList').addEventListener('click', async (event) => {
 document.querySelectorAll('[data-brand]').forEach((button) => button.addEventListener('click', async () => {
   if (state.loading || button.dataset.brand === state.brand) return;
   state.brand = button.dataset.brand;
+  loadEndingSoon();
   state.movies = [];
   state.timelineReleases = [];
   document.querySelectorAll('[data-brand]').forEach((item) => {

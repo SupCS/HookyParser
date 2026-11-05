@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='timeline-tooltip.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='schedule-range.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='brand-switcher.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='ending-soon.css') }}">
 </head>
 <body>
   <main class="shell">
@@ -31,6 +32,10 @@
       <div class="hero-actions"><div class="auto-status"><i></i><span><b>Next collection</b><small id="nextRefresh">Calculating…</small></span></div><div class="refresh-actions"><button class="primary" id="refresh">Refresh location <span>↗</span></button><button class="refresh-all" id="refreshAll" type="button" title="Refresh all locations for the next 13 days" aria-label="Refresh all locations">All <span>↻</span></button></div></div>
     </header>
 
+    <details class="ending-soon" id="endingSoon">
+      <summary><span class="ending-icon" aria-hidden="true">!</span><span class="ending-heading"><strong>Ending soon</strong><small>Across this network · today and the next 6 days</small></span><span id="endingCount" role="status">Checking…</span><span class="ending-chevron" aria-hidden="true">⌄</span></summary>
+      <div class="ending-content"><p class="ending-explainer">Last scheduled dates by movie and location. These are inferred from saved showtimes, not confirmed end-of-run dates. Review before switching off creatives; schedules can be extended.</p><div id="endingAlerts"><p>Checking saved schedules…</p></div></div>
+    </details>
     <div class="schedule-view-switch" role="group" aria-label="Schedule view"><span>View schedule</span><button type="button" data-schedule-view="locations" aria-pressed="true">By location</button><button type="button" data-schedule-view="movies" aria-pressed="false">By movie</button><small id="scheduleViewHelp">Choose a location to browse its movies.</small></div>
     <section class="toolbar schedule-toolbar" aria-label="Filters">
       <label><span>Location</span><div class="control select-control"><select id="location">{% for slug, name in locations.items() %}<option value="{{ slug }}" {% if slug == 'hutto' %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div></label>
@@ -54,5 +59,6 @@
   </main>
   <script>window.HOOKY_CONFIG = {{ hooky_config | tojson }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='ending-soon.js') }}"></script>
 </body>
 </html>

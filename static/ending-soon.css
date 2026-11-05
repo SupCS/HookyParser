@@ -1,0 +1,11 @@
+.ending-soon{margin:22px 0 0;border:1px solid #f2b7bc;border-radius:14px;background:#fff5f5;color:#942532;overflow:hidden}
+.ending-soon>summary{display:flex;align-items:center;gap:14px;padding:17px 20px;cursor:pointer;list-style:none}
+.ending-soon>summary::-webkit-details-marker{display:none}
+.ending-soon summary:focus-visible{outline:3px solid var(--aid-blue);outline-offset:-3px}
+.ending-icon{display:grid;place-items:center;flex-shrink:0;width:32px;height:32px;border-radius:50%;background:#ffe0e2;color:#bb2435;font-weight:700;font-size:19px}
+.ending-heading{display:grid;gap:4px}.ending-heading strong{font-size:14px}.ending-heading small{font-size:11px;color:#a25c64}
+#endingCount{margin-left:auto;font-size:12px;font-weight:700;text-align:right}.ending-chevron{font-size:22px;transition:transform .15s}.ending-soon[open] .ending-chevron{transform:rotate(180deg)}
+.ending-content{padding:0 20px 20px}.ending-explainer{margin:0 0 16px;font-size:12px;line-height:1.6;color:#87565c;max-width:920px}.ending-list{padding:0;margin:0;list-style:none;display:grid;gap:8px}
+.ending-row{display:flex;align-items:center;justify-content:space-between;gap:20px;background:white;border:1px solid #f2cdd0;border-left:3px solid #d62f42;border-radius:9px;padding:14px 16px}.ending-row>div:first-child{display:grid;gap:5px;min-width:0}.ending-row strong{font-size:14px;overflow-wrap:anywhere}.ending-row span{font-size:12px}.ending-row small{font-size:10px;color:#94656a;line-height:1.5}.ending-date{display:grid;gap:6px;flex-shrink:0;text-align:right}.ending-date b{font-size:12px}.ending-date span{font-size:11px;color:#94656a}.ending-empty{font-size:12px;line-height:1.6;color:#87565c;margin:12px 0 0}
+.ending-verification{margin-top:18px;color:#7c6241}.ending-verification>summary{font-size:12px;font-weight:600;cursor:pointer;padding:6px 0}.ending-verification>p{font-size:11px;line-height:1.6}.ending-uncertain{border-color:#e7daca;border-left-color:#c09b65}.ending-uncertain small,.ending-uncertain .ending-date span{color:#8b775e}
+@media(max-width:680px){.ending-soon>summary{gap:10px;padding:14px}.ending-heading small{font-size:10px}.ending-content{padding:0 14px 14px}.ending-row{align-items:flex-start;flex-direction:column;gap:10px}.ending-date{text-align:left}#endingCount{font-size:10px;max-width:85px}.ending-icon{width:26px;height:26px}}

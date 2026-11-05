@@ -23,7 +23,7 @@ class ReleaseCollectionTests(unittest.TestCase):
         self.catalog_patch.start()
         self.addCleanup(self.catalog_patch.stop)
         self.today = datetime.now(timezone.utc).date()
-        self.brand = {"test": {"locations": {"one": {"timezone": "UTC", "base_url": "https://example.com/one"}}}}
+        self.brand = {"test": {"locations": {"one": {"name": "One", "timezone": "UTC", "base_url": "https://example.com/one"}}}}
         self.movie = {"slug": "future-film", "title": "Future Film", "showings": [
             {"time": "7:00PM", "url": "https://example.com/checkout/1"}
         ]}
@@ -156,6 +156,67 @@ class ReleaseCollectionTests(unittest.TestCase):
                       "date_from=2026-01-01&date_to=2028-01-01"):
             with self.subTest(query=query):
                 self.assertEqual(client.get(f"/api/schedule-locations?{query}").status_code, 400)
+
+    def ending_rows(self, location, offset, title="Clayface", days=15):
+        now = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)
+        return [{"location": location, "show_date": (now.date() + timedelta(days=day)).isoformat(),
+                 "captured_at": now.isoformat(), "movie_title": title if day == offset else "Other film"}
+                for day in range(days)]
+
+    def test_ending_alerts_are_per_location_and_roll_forward(self):
+        now = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)
+        locations = {slug: {"name": slug.title(), "timezone": "UTC"}
+                     for slug in ("baytown", "hutto", "waxahachie")}
+        rows = (self.ending_rows("baytown", 1) + self.ending_rows("hutto", 2)
+                + self.ending_rows("waxahachie", 15, days=24))
+        alerts, uncertain = app.build_ending_alerts(rows, locations, now)
+        self.assertEqual([(item["title"], item["location"], item["days_left"]) for item in alerts],
+                         [("Clayface", "baytown", 1), ("Clayface", "hutto", 2)])
+        self.assertEqual(uncertain, [])
+        later = now + timedelta(days=14)
+        for row in rows:
+            row["captured_at"] = later.isoformat()
+        alerts, _ = app.build_ending_alerts(rows, locations, later)
+        self.assertEqual([(item["title"], item["location"]) for item in alerts], [("Clayface", "waxahachie")])
+
+    def test_ending_alerts_do_not_mistake_schedule_boundary_for_an_end(self):
+        now = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)
+        locations = {"one": {"name": "One", "timezone": "UTC"}}
+        cases = {
+            "truncated": self.ending_rows("one", 1, days=2),
+            "empty_future": [dict(row, movie_title=None if index > 1 else row["movie_title"])
+                             for index, row in enumerate(self.ending_rows("one", 1))],
+            "stale": [dict(row, captured_at=(now - timedelta(days=3)).isoformat())
+                      for row in self.ending_rows("one", 1)],
+            "missing_day": [row for index, row in enumerate(self.ending_rows("one", 1)) if index != 4],
+        }
+        for label, rows in cases.items():
+            with self.subTest(label=label):
+                alerts, uncertain = app.build_ending_alerts(rows, locations, now)
+                self.assertEqual(alerts, [])
+                self.assertIn("Clayface", [item["title"] for item in uncertain])
+
+    def test_ending_alerts_use_local_dates_and_exclude_later_return(self):
+        now = datetime(2026, 11, 5, 2, tzinfo=timezone.utc)
+        locations = {"one": {"name": "One", "timezone": "America/Chicago"}}
+        rows = self.ending_rows("one", 6)
+        alerts, _ = app.build_ending_alerts(rows, locations, now)
+        self.assertEqual(alerts, [])  # Nov 11 is seven days away in Chicago, outside the window.
+        rows = self.ending_rows("one", 1)
+        rows.append(dict(rows[-1], show_date="2026-12-01", movie_title="Clayface"))
+        alerts, uncertain = app.build_ending_alerts(rows, locations, now)
+        self.assertFalse(any(item["title"] == "Clayface" for item in alerts + uncertain))
+
+    def test_ending_endpoint_is_read_only_and_isolated_by_brand(self):
+        day = self.today.isoformat()
+        with patch.object(app, "BRANDS", self.brand), patch.object(app, "fetch_schedule") as fetch:
+            app.save_snapshot("test", "one", day, [self.movie], "https://example.com")
+            client = app.app.test_client()
+            data = client.get("/api/ending-soon?brand=test").get_json()
+            self.assertEqual(data["alerts"], [])
+            self.assertEqual(data["unconfirmed"][0]["title"], "Future Film")
+            self.assertEqual(client.get("/api/ending-soon?brand=unknown").status_code, 400)
+            fetch.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -88,6 +88,8 @@ Set the same `DATABASE_URL` and `OMDB_API_KEY` in BOTH Railway services (web and
 
 While visible, Release timeline reloads saved data every minute and when returning to the browser tab. Background reads do not trigger collection or IMDb requests. The summary shows the latest catalog update separately from the latest schedule collection timestamp and the earliest of the selected locations' last saved schedule dates. Schedule coverage does not limit catalog releases. These timestamps are not proof that every location or source succeeded. The Next refresh countdown indicates the planned cron time, not a successful run.
 
+The collapsible **Ending soon** section covers every location in the selected network, independently of Schedule filters. It lists each movie/location whose last saved show date falls on the location's today or next six days. A likely-ending alert requires snapshots no older than 48 hours for the last show date and all seven following dates, plus actual later programming at least seven days after that last show date. Publication boundaries, missing dates, and stale schedules appear separately under **to verify**. A later saved showing of the same movie suppresses the earlier ending. These are schedule-based estimates, not confirmed end-of-run dates. The section reads saved data on page load, network changes, manual refresh completion, every visible minute, and returning to the tab; it never triggers collection itself.
+
 Check the `python collect.py` service logs to confirm cron runs and exits. Web and cron must share PostgreSQL; separate services' local SQLite files are not shared.
 
 Regression checks: `python -m unittest discover -s tests -v` and `node tests/test_timeline_refresh.cjs`.
